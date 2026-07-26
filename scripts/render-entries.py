@@ -141,11 +141,18 @@ def md_to_html(body, repo):
     return body
 
 
-def truncate(body, url):
+def truncate(body):
+    """Cut an over-long body at a line boundary.
+
+    Returns (text, was_truncated). It deliberately does NOT append its own
+    "read more" link: render() always adds exactly one footer link, and having
+    truncate() add a second produced two links to the same URL on every
+    truncated entry — reported from a live board.
+    """
     if len(body) <= MAX_BODY:
-        return body
+        return body, False
     cut = body[:MAX_BODY].rsplit("<br/>", 1)[0]
-    return f'{cut}… <a href="{url}">read the full comment on GitHub</a><br/>'
+    return f"{cut}…<br/>", True
 
 
 def event_key(ev):
@@ -181,8 +188,17 @@ def render(ev, repo, automation_author=None):
             f'<i>Synced from <a href="{ev["url"]}">{repo}#{ev["number"]}</a></i>'
             "<br/><br/>"
         )
-    parts.append(truncate(md_to_html(ev.get("body"), repo), ev["url"]))
-    parts.append(f'<a href="{ev["url"]}">View on GitHub →</a>')
+    text, was_truncated = truncate(md_to_html(ev.get("body"), repo))
+    parts.append(text)
+
+    # Exactly ONE footer link per entry. When the body was cut, the link carries
+    # that fact instead of adding a second link beside it.
+    if was_truncated:
+        what = "description" if ev["kind"] == "opened" else "comment"
+        label = f"Read the full {what} on GitHub →"
+    else:
+        label = "View on GitHub →"
+    parts.append(f'<a href="{ev["url"]}">{label}</a>')
     parts.append("</div>")
     return "".join(parts)
 

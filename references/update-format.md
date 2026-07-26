@@ -128,9 +128,23 @@ it is a per-installation value that lives only in the user's state file.
 
 ## Length
 
-Cap bodies at ~2,000 characters. Truncate at a line boundary, append
-`… <a href="...">read the full comment on GitHub</a>`. Long comments are
-usually logs, and the value in monday is knowing the exchange happened.
+Cap bodies at ~2,000 characters and truncate at a line boundary, ending with a
+bare `…`. Long comments are usually logs, and the value in monday is knowing
+the exchange happened.
+
+**Exactly one footer link per entry.** When the body was cut, the single footer
+link carries that fact — it does not get a second link beside it:
+
+| Body | Footer |
+|---|---|
+| complete | `View on GitHub →` |
+| truncated, comment | `Read the full comment on GitHub →` |
+| truncated, issue/PR body | `Read the full description on GitHub →` |
+
+Having truncation append its own "read more" link *and* the footer append
+"View on GitHub" produced two links to the same URL on every truncated entry —
+reported from a live board after 22 of 50 entries shipped that way. Truncation
+returns `(text, was_truncated)`; the caller picks the label.
 
 ## Entry template
 
