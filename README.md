@@ -212,6 +212,7 @@ re-creating it makes the restore land as a duplicate.
 
 ```
 CLAUDE.md                       install instructions Claude follows
+handoff.md                      development context for contributors
 SKILL.md                        the skill — 7 steps
 INSTALL.md                      requirements, setup, configuration
 references/board-schema.md      columns, types, columnValues payloads

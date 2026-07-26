@@ -18,7 +18,7 @@ mkdir -p "$OUT/references" "$OUT/packaging" "$OUT/scripts" "$OUT/tests"
 
 # Skill surface only. .monday-sync/ is deliberately excluded — it holds a real
 # board id, repo slug, and item mapping, and belongs to the syncing user.
-cp "$ROOT/SKILL.md" "$ROOT/README.md" "$ROOT/CLAUDE.md" "$ROOT/VERSION" "$OUT/"
+cp "$ROOT/SKILL.md" "$ROOT/README.md" "$ROOT/CLAUDE.md" "$ROOT/handoff.md" "$ROOT/VERSION" "$OUT/"
 cp "$ROOT/references/"*.md                               "$OUT/references/"
 cp "$ROOT/scripts/"*.py "$ROOT/scripts/"*.sh              "$OUT/scripts/"
 cp "$ROOT/tests/"*.py                                     "$OUT/tests/"
