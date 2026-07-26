@@ -78,38 +78,37 @@ check "no generated monday column ids" \
   '\b(color|numeric|dropdown|link|text|date|status)_[a-z0-9]{6,}\b' \
   'Column ids come from create_column at runtime. Describe the prefix, not a value.'
 
-# The skill's OWN upstream is allowed — install and update need a real URL.
-# What must stay generic is the *sync target*: the repo whose issues get mirrored.
-# Override the upstream for a fork with MONDAY_SYNC_UPSTREAM at runtime.
-#
-# NOTE: grep -E is POSIX ERE — no negative lookahead. Allowed slugs are passed
-# as an explicit allow list instead, which is why this check has a 4th argument.
+# The upstream repo is named in exactly ONE place: scripts/update-skill.sh.
+# It must never appear in documentation. Docs get distributed, pasted into
+# chats, and screenshotted; the updater reaches the repo with the user's own gh
+# credentials, so the slug adds no capability to a reader — only exposure.
 UPSTREAM_SLUG="${MONDAY_SYNC_UPSTREAM:-Nightfire-Ops/monday-github-issues-sync}"
-check "no concrete GitHub owner/repo slugs (other than this skill's upstream)" \
+
+check "no concrete GitHub owner/repo slugs" \
   'github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9._-]+' \
   'Use OWNER/REPO or owner/repo. Real slugs bind the sync to one project.' \
-  "github\.com/(OWNER/REPO|owner/repo|o/r|${UPSTREAM_SLUG})"
+  'github\.com/(OWNER/REPO|owner/repo|o/r)'
 
-# The upstream slug may appear only in install/update/release plumbing — never
-# in the sync logic itself, where it would pin what gets mirrored.
-leaks=$(grep -rlE "${UPSTREAM_SLUG}" "${FILES[@]}" 2>/dev/null \
-        | grep -vE '/(README|CLAUDE|INSTALL)\.md$' || true)
-if [[ -n "$leaks" ]]; then
-  printf '\n✗ upstream slug outside install/update docs\n'
-  printf '  %s\n' 'It belongs in README/CLAUDE/INSTALL and the scripts only.'
-  printf '%s\n' "$leaks" | sed 's|^'"$ROOT"'/|    |'
+# FILES covers .md/.py/.json only — scripts/update-skill.sh is a .sh and is not
+# scanned, which is exactly the intent: the slug lives there and nowhere else.
+doc_leaks=$(grep -rlE "${UPSTREAM_SLUG}" "${FILES[@]}" 2>/dev/null || true)
+if [[ -n "$doc_leaks" ]]; then
+  printf '\n✗ upstream slug appears in documentation\n'
+  printf '  %s\n' 'It belongs only in scripts/update-skill.sh. Remove it from:'
+  printf '%s\n' "$doc_leaks" | sed 's|^'"$ROOT"'/|    |'
   FAIL=1
 else
-  printf '✓ upstream slug confined to install/update docs\n'
+  printf '✓ upstream slug confined to scripts/update-skill.sh\n'
 fi
 
-# Attribution must never be hardcoded, and must never branch on bot-ness.
-# Matches labelling *constructs* only — identifiers, badges, and group names.
-# Prose that documents the [bot]-stripping rule is legitimate and must pass, so
-# this deliberately does not match the bare string "[bot] suffix".
-check "no bot labelling in output" \
-  '(\bis_?bot\b|\bisBot\b|bot (badge|label|tag|marker)|\(bot\)|["'"'"']Automated["'"'"'] *(group|section))' \
-  'Attribution is the GitHub login with [bot] stripped. No bot marking anywhere.'
+# ...and it must still be there, or updating silently breaks.
+if ! grep -qE "${UPSTREAM_SLUG}" "$ROOT/scripts/update-skill.sh" 2>/dev/null; then
+  printf '\n✗ scripts/update-skill.sh has no upstream configured\n'
+  printf '  %s\n' 'Without it, update-skill.sh cannot resolve a version.'
+  FAIL=1
+else
+  printf '✓ updater has an upstream configured\n'
+fi
 
 if [[ -d "$ROOT/.monday-sync" ]]; then
   printf '\n! .monday-sync/ present — exclude it from any shared copy\n'

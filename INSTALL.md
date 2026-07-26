@@ -154,7 +154,10 @@ The updater replaces the skill surface only — `SKILL.md`, `references/`,
 `.monday-sync/` state, which holds the item mapping that prevents duplicate
 board rows, is never touched.
 
-Point it at a fork with `MONDAY_SYNC_UPSTREAM=owner/repo`.
+Updates come from the authenticated upstream configured inside
+`scripts/update-skill.sh` — the only place the source repository is named, and
+reached with your own `gh` credentials. Point it at a fork with
+`MONDAY_SYNC_UPSTREAM=owner/repo`.
 
 ## 8. Recurring sync
 

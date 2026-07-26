@@ -1,16 +1,12 @@
 # Installing this skill
 
-You are reading this because someone gave you the URL of this repository and
-asked you to install it. This file tells you how. Follow it directly — do not
-ask the user to run the steps themselves unless something fails.
+You are reading this because someone handed you this skill directory (or an
+archive of it) and asked you to install it. This file tells you how. Follow it
+directly — do not ask the user to run the steps themselves unless something
+fails.
 
 **What this is:** `monday-github-issues-sync`, a Claude Code skill that mirrors
 a GitHub repository's issues and pull requests into a monday.com board.
-
-**Access note:** this repository is private. Plain HTTP fetches of the repo page
-or `raw.githubusercontent.com` return 404 — use authenticated `gh` for every
-read. If you reached this file some other way and `gh` is not authenticated,
-stop and tell the user to run `gh auth login`; there is no anonymous path.
 
 ## Install
 
@@ -19,24 +15,20 @@ stop and tell the user to run `gh auth login`; there is no anonymous path.
    - **Project** → `<repo>/.claude/skills/`, available in one repository and
      keeps the sync state file next to the code it describes
 
-2. **Clone and copy.** The skill directory name *is* the slash command, so it
+2. **Copy this directory in.** The directory name *is* the slash command, so it
    must stay exactly `monday-github-issues-sync`:
 
    ```bash
    DEST="$HOME/.claude/skills"          # or <repo>/.claude/skills
    mkdir -p "$DEST"
-   tmp=$(mktemp -d)
-   gh repo clone Nightfire-Ops/monday-github-issues-sync "$tmp/s" -- --depth 1 --quiet
    rm -rf "$DEST/monday-github-issues-sync"
-   cp -r "$tmp/s" "$DEST/monday-github-issues-sync"
-   rm -rf "$tmp"
+   cp -r . "$DEST/monday-github-issues-sync"
    chmod +x "$DEST/monday-github-issues-sync/scripts/"*.sh \
             "$DEST/monday-github-issues-sync/scripts/"*.py \
             "$DEST/monday-github-issues-sync/packaging/"*.sh
    ```
 
-   If `gh` is unavailable or unauthenticated, say so and stop — this is a
-   private repository and there is no anonymous fallback.
+   Run it from inside this directory. If you were given a zip, unzip first.
 
 3. **Check prerequisites** and report any that are missing:
 
@@ -63,10 +55,17 @@ stop and tell the user to run `gh auth login`; there is no anonymous path.
 
 ## Updating
 
+The skill checks for updates itself when invoked and asks before applying one.
+To drive it manually:
+
 ```bash
 ~/.claude/skills/monday-github-issues-sync/scripts/update-skill.sh --check
 ~/.claude/skills/monday-github-issues-sync/scripts/update-skill.sh
 ```
+
+The upstream is configured inside `scripts/update-skill.sh` and reached with the
+user's own `gh` credentials. Do not copy that value anywhere else, and do not
+put it in documentation.
 
 The updater replaces the skill surface only and never touches `.monday-sync/`,
 which holds the item mapping that prevents duplicate board rows.

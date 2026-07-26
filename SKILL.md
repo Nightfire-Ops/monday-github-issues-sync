@@ -1,6 +1,6 @@
 ---
 name: monday-github-issues-sync
-version: 1.1.3
+version: 1.2.0
 description: One-way sync of a GitHub repository's issues and pull requests into a monday.com board, preserving GitHub timestamps, so project management can see everything happening in development. Prompts for the repo URL and target board, backfills full history on first run, then syncs incrementally.
 allowed-tools:
   - AskUserQuestion
@@ -60,6 +60,34 @@ is preserved; only the columns this skill owns get overwritten.
    read back from the board. Attribution always comes from the GitHub event's
    own `user.login`, never from the account running the sync. Before sharing a
    modified copy, re-run the identity scan in `packaging/verify-portable.sh`.
+
+## Step 0 — Check for updates
+
+Run this **first, before collecting inputs**, so a fix ships before it is
+needed rather than after a bad run:
+
+```bash
+scripts/update-skill.sh --check
+```
+
+- **Up to date, or the check fails** (offline, `gh` unauthenticated, no access)
+  → say nothing and continue to Step 1. A failed update check must never block
+  a sync; it is a convenience, not a gate.
+- **Update available** → tell the user the two versions and ask, once:
+
+  > A newer version of this skill is available (1.1.0 → 1.2.0). Update before
+  > running the sync?
+
+  On yes: run `scripts/update-skill.sh`, report the new version, then **re-read
+  `SKILL.md` from disk** — the steps below may have changed under you — and
+  start again from Step 1.
+  On no: continue with the installed version and do not ask again this session.
+
+Skip Step 0 entirely when `options.autoApprove` is set: an unattended run must
+not stall on a prompt, and must not silently swap its own logic mid-flight.
+
+Never update without asking. The user may be mid-task on a board where
+behaviour changes matter.
 
 ## Step 1 — Collect inputs
 

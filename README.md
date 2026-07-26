@@ -20,30 +20,27 @@ against the board before writing, so **re-running never duplicates**.
 
 ## Install
 
-**Paste this into Claude Code:**
-
-```
-Install the Claude Code skill from https://github.com/Nightfire-Ops/monday-github-issues-sync
-It is a PRIVATE repo — fetch it with `gh repo clone` (not WebFetch), then follow
-the CLAUDE.md at its root.
-```
-
-The private-repo note matters: `raw.githubusercontent.com` and the repo page
-both return **404** to unauthenticated requests, so an agent that reaches for a
-plain HTTP fetch sees nothing and cannot discover `CLAUDE.md` on its own. Once
-cloned with `gh`, [CLAUDE.md](CLAUDE.md) tells Claude exactly where to install,
-what to check, and what not to touch.
-
-If the repo is ever made public, the URL alone is enough and the note can go.
-
-**Manually:**
+The skill ships as a directory. Copy it into your skills folder — the directory
+name *is* the slash command, so it must stay `monday-github-issues-sync`:
 
 ```bash
-gh repo clone Nightfire-Ops/monday-github-issues-sync
+# personal — available in every project
+cp -r monday-github-issues-sync ~/.claude/skills/
+
+# or project-scoped — keeps sync state beside the code it describes
+mkdir -p .claude/skills && cp -r monday-github-issues-sync .claude/skills/
+```
+
+From a release archive:
+
+```bash
+unzip monday-github-issues-sync-*.zip
 cp -r monday-github-issues-sync ~/.claude/skills/
 ```
 
-Or scope it to one project by copying into that repo's `.claude/skills/`.
+Hand the directory (or the zip) to Claude Code and ask it to install the skill —
+[CLAUDE.md](CLAUDE.md) inside it tells Claude where to put it, what to verify,
+and what not to touch.
 
 See [INSTALL.md](INSTALL.md) for requirements, monday MCP setup, and
 configuration.
@@ -70,10 +67,18 @@ You can also invoke it in plain language — "sync github issues to monday",
 
 ## Update
 
+The skill checks for updates when invoked and asks before applying one. You can
+also drive it directly:
+
 ```bash
 ./scripts/update-skill.sh --check     # is there a newer version?
 ./scripts/update-skill.sh             # update in place
 ```
+
+Updates come from the authenticated upstream configured in
+`scripts/update-skill.sh` — the single place the source repository is named.
+Access is whatever your `gh` credentials allow; there is no anonymous path and
+no URL to distribute. Override for a fork with `MONDAY_SYNC_UPSTREAM=owner/repo`.
 
 The updater replaces the skill surface only. Your `.monday-sync/` state — the
 item mapping that prevents duplicates — is never touched.
