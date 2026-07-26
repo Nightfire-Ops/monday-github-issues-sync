@@ -22,6 +22,7 @@ def load(filename, name):
 
 render = load("render-entries.py", "render_entries")
 reconcile = load("reconcile.py", "reconcile_mod")
+resolve = load("resolve-authors.py", "resolve_authors")
 
 REPO = "OWNER/REPO"
 

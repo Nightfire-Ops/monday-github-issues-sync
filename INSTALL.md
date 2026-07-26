@@ -133,8 +133,7 @@ Tunable options live in that file under `options`:
 
 | Option | Default | Effect |
 |---|---|---|
-| `assignTo` | `null` | assign every item to a monday user on create: `"me"` or a numeric user id |
-| `automationAuthor` | `null` | attribute `[bot]`-authored events to this GitHub login instead |
+| `automationAuthor` | `null` | human accountable for automation; used only when GitHub yields no one |
 | `syncCommits` | `false` | post each PR commit as a feed entry (noisy) |
 | `syncLabelEvents` | `false` | post label/assignment changes (costs per-item API calls) |
 | `maxItemsPerRun` | `100` | items created or updated per run |

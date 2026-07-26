@@ -14,7 +14,7 @@ A Claude Code skill that mirrors a GitHub repo's issues and pull requests into a
 monday.com board (one-way, GitHub → monday), so PM can see development activity
 without living in GitHub.
 
-- **Latest release:** v1.7.0
+- **Latest release:** v1.8.0
 - **Invoked as:** `/monday-github-issues-sync`
 
 **Do not re-read the design from this document.** `SKILL.md` is the entry point;
@@ -25,9 +25,10 @@ without living in GitHub.
 
 | Item | State |
 |---|---|
-| Skill + docs + scripts | complete, v1.7.0, 8 portability checks passing |
-| Test suite | 89 tests, 99% coverage on both scripts, gates releases |
-| `options.excludeAuthors` | shipped in v1.7.0; never yet run against a board |
+| Skill + docs + scripts | complete, v1.8.0, 9 portability checks passing |
+| Test suite | 110 tests, three scripts, gates releases |
+| `options.excludeAuthors` | v1.7.0; plan path live-validated on a throwaway board |
+| Author resolution + no assignment | v1.8.0; resolver not yet run against a board |
 | Live backfill | complete: 26 items, 50 feed entries, all assigned |
 | Doubled-link repair (17 entries) | done, verified by reading bodies back |
 | Test board placeholders / 2nd board | deleted |
@@ -98,12 +99,21 @@ Established empirically; documented in `references/board-schema.md` and
   reports something deleted, point them at their monday.com admin — deleted items
   sit in the recycle bin and admins can restore them. Do **not** re-sync to
   "rebuild" first; that makes the restore land as a duplicate.
-- **No bot labelling.** Authors are attributed by GitHub login with a trailing
-  `[bot]` stripped. No badge, glyph, suffix, or separate group, and no formatting
-  branches on bot-ness. `options.automationAuthor` re-attributes `[bot]` authors
-  to a configured login (an *ownership* view, not an authorship claim). The lint
-  fails on bot-labelling constructs; tests assert a bot entry and a human entry
-  render identically.
+- **The Author column names a person, never a bot** (changed in 1.8.0; before
+  that the `[bot]` suffix was merely stripped, shipping `dependabot` as an
+  author). `resolve-authors.py` walks GitHub for a human — opener, merger,
+  auto-merge enabler, approver — and `automationAuthor` is the last resort.
+  Unattributable raises rather than falling back to the bot login. Rationale
+  from the user: everyone works through harnesses now, so "was it a bot" is not
+  the interesting question; "whose account owns this" is. Bot-ness stays
+  discoverable via real GitHub labels, which the skill does not invent.
+- **No bot labelling** still holds for *formatting*: no badge, glyph, suffix, or
+  separate group, and no formatting branches on bot-ness. Once attribution is
+  resolved, an entry that came via automation renders identically to one that
+  did not — `test_no_bot_marking_in_output` asserts exactly that.
+- **The skill assigns nobody.** No monday people column is ever written. A
+  GitHub issue has no opinion about who should own the row, and guessing puts
+  work in somebody's "My Work" queue. `assignTo` was removed in 1.8.0.
 - **`excludeAuthors` is item-scoped, and that is deliberate.** It filters which
   issues and PRs become board items; it does **not** filter feed entries. An
   excluded author commenting on a mirrored item is part of that conversation,
@@ -115,8 +125,12 @@ Established empirically; documented in `references/board-schema.md` and
   on GitHub gets the filter they expected instead of a silent no-op. The
   un-exclude/backfill trap is documented in `references/state-file.md`.
 - **Portability is enforced.** No GitHub/monday account, org, repo, board,
-  column, or user id hardcoded. `./packaging/verify-portable.sh` has 8 checks,
-  each negative-tested. Upstream slug allowed only in README/CLAUDE/INSTALL and
+  column, or user id hardcoded. `./packaging/verify-portable.sh` has 9 checks,
+  each negative-tested. The 9th is self-configuring: it reads the local
+  `.monday-sync/*.json` and fails if any literal value from it — login, board
+  name, repo slug, column id — appears in the shipped surface. It is the only
+  check that can catch a hardcoded GitHub *login*, since a login looks like any
+  other word. A clean checkout has nothing to compare against and says so. Upstream slug allowed only in README/CLAUDE/INSTALL and
   `scripts/update-skill.sh`.
 - **Releases:** `./packaging/release.sh X.Y.Z --publish` — tests, lint, VERSION
   bump, SKILL.md frontmatter stamp, `dist/` rebuild, versioned + latest zips,
@@ -159,9 +173,12 @@ because removing a tracked file was outside the change that found it.
   session — reasoned but untested.
 - Recurring sync via the `schedule` skill (`options.autoApprove: true` skips the
   plan confirmation and the Step 0 update check).
-- **Exercise `excludeAuthors` against the live board.** It shipped in 1.7.0 with
-  14 tests, but nothing about it has touched a real board — the noisy-PR case
-  that motivated it is right there to try it on.
+- **Exercise the 1.8.0 author resolver against a board.** `excludeAuthors` was
+  validated on a throwaway board (2026-07-26): real `get_board_items_page`
+  output through `reconcile.py`, on-board excluded rows frozen and named, no
+  deletions, `[bot]`-suffix matching confirmed against live GitHub data. Only
+  the *plan* path — no writes were applied, and the resolver postdates that.
+- **Still open: `.coverage` is tracked** — see *Known wart*.
 - `syncCommits` and `syncLabelEvents` are off by default and unexercised.
 - No integration test touches the monday MCP; everything MCP-side was validated
   by hand. A fake-MCP harness would close that gap if the skill grows.

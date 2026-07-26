@@ -109,6 +109,25 @@ without a `GitHub URL`, so hand-created items are never touched.
 You can also invoke it in plain language — "sync github issues to monday",
 "mirror our repo into the board" — which matches the skill's triggers.
 
+### Who the Author column names
+
+Always a person, never a bot. Work pushed through a harness is already authored
+by your own GitHub account — the tool shows up as a `Co-Authored-By` trailer,
+not as the author — so this needs no configuration in the usual case.
+
+Genuine third-party apps like dependabot are different: they open items under
+their own identity. For those the sync asks GitHub who actually touched the
+item — who merged it, who enabled auto-merge, who approved it — and only if
+nobody has does it fall back to `options.automationAuthor`, the login you
+nominate as accountable for automation.
+
+You can still find every bump: GitHub's own labels (`dependencies`,
+`github_actions`) ride along in the `Labels` column, so the board stays
+searchable without a bot's name sitting in an authorship field.
+
+Rows arrive **unassigned**. The skill never writes to a monday people column —
+a GitHub issue has no opinion about who should own the row.
+
 ### Keeping automation off the board
 
 Dependency-bump PRs can outnumber human work several to one and bury it. When
@@ -246,6 +265,7 @@ references/state-file.md        state schema, event keys, recovery
 references/update-format.md     feed entry HTML, glyphs, attribution
 scripts/reconcile.py            board reconciliation + sync plan
 scripts/render-entries.py       markdown → monday-HTML renderer
+scripts/resolve-authors.py      resolves the human behind each item
 tests/                          unittest suite (99% coverage)
 scripts/update-skill.sh         in-place updater
 packaging/release.sh            version bump + dist + zip + publish

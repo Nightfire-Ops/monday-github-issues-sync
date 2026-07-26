@@ -52,20 +52,36 @@ GLYPH = {
 }
 
 
+class UnresolvedAuthor(Exception):
+    """A bot identity reached the renderer with no human to attribute it to."""
+
+
 def display_author(login, automation_author=None):
     """Resolve the display attribution for an event author.
 
-    Strips a trailing [bot] suffix. When automation_author is set, an author
-    carrying that suffix is re-attributed to it instead — an ownership override
-    configured per installation, never hardcoded.
+    The Author column and every feed header name a **person, never a bot**. A
+    `[bot]` identity is not an author — no one's account pushed it — so it is
+    replaced by the human accountable for that automation.
 
-    Nothing downstream may branch on bot-ness for formatting: the returned name
-    is rendered identically regardless of how it was resolved.
+    Normally the author arriving here is already resolved by
+    `resolve-authors.py`, which walks GitHub for whoever merged, enabled
+    auto-merge, or approved. This is the backstop for anything that slipped
+    past: an unattributable bot raises rather than being written to the board.
+    Stripping the suffix and shipping `dependabot` was the old behaviour and is
+    exactly what must not happen.
+
+    Nothing downstream may branch on bot-ness for *formatting*: once resolved,
+    the name renders identically however it was arrived at.
     """
     login = login or ""
-    if automation_author and login.endswith("[bot]"):
-        return automation_author
-    return re.sub(r"\[bot\]$", "", login)
+    if login.endswith("[bot]"):
+        if automation_author and not automation_author.endswith("[bot]"):
+            return automation_author
+        raise UnresolvedAuthor(
+            f"{login!r} has no human attribution. Resolve it with "
+            "resolve-authors.py, or set options.automationAuthor."
+        )
+    return login
 
 
 def fmt_ts(iso):
@@ -236,7 +252,12 @@ def main():
 
     for ev in events:
         ev["key"] = event_key(ev)          # must precede render(); embedded in body
-        ev["html"] = render(ev, repo, automation_author)
+        try:
+            ev["html"] = render(ev, repo, automation_author)
+        except UnresolvedAuthor as exc:
+            # Fail the whole run, not this entry. Skipping it would post a
+            # partial feed and hide the misconfiguration behind a gap.
+            sys.exit(f"render-entries.py: #{ev.get('number')}: {exc}")
 
     # Oldest-first within each item, so the monday feed reads chronologically
     # even though monday stamps every entry with the time it was posted.

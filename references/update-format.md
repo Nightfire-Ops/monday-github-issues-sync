@@ -121,7 +121,9 @@ Some teams want automated activity attributed to the person accountable for the
 repository rather than to the service that opened it — a dependency-bump PR
 shows up under the maintainer who owns the upgrade, not under the bot.
 
-Set `automationAuthor` in the state file's `options` to a GitHub login:
+Attribution resolves to a human before rendering — see
+`scripts/resolve-authors.py`. `automationAuthor` is the fallback for when
+GitHub yields nobody:
 
 ```json
 "options": { "automationAuthor": "<login>" }

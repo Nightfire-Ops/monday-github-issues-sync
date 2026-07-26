@@ -109,7 +109,65 @@ else
   printf '✓ updater has an upstream configured\n'
 fi
 
+# The strongest available check, and the only one that can catch a hardcoded
+# GitHub *login* — a login looks like any other word, so there is no pattern to
+# match. Instead: if this working copy has a real install's state file, no
+# literal value out of it may appear anywhere in the shipped surface.
+#
+# Self-configuring by construction. It names no account, and it gets stricter
+# the more real the working copy is. A clean checkout has nothing to compare
+# against, which is reported rather than passed silently.
 if [[ -d "$ROOT/.monday-sync" ]]; then
+  mapfile -t SECRETS < <(python3 - "$ROOT" <<'PY' 2>/dev/null || true
+import glob, json, os, sys
+root = sys.argv[1]
+GENERIC = {"person", "team", "public", "private", "issues", "board"}
+out = set()
+for path in glob.glob(os.path.join(root, ".monday-sync", "*.json")):
+    try:
+        with open(path) as fh:
+            d = json.load(fh)
+    except (OSError, ValueError):
+        continue
+    o = d.get("options") or {}
+    vals = [d.get("repo"), d.get("boardName"), d.get("boardId"),
+            o.get("automationAuthor"), o.get("assignTo")]
+    vals += list(o.get("excludeAuthors") or [])
+    vals += list((d.get("columnMap") or {}).values())
+    vals += list((d.get("groupMap") or {}).values())
+    for v in vals:
+        v = str(v).strip()
+        # Short or generic values are structural vocabulary, not identity, and
+        # would false-positive against ordinary prose in the docs.
+        if len(v) >= 6 and v.lower() not in GENERIC:
+            out.add(v)
+for v in sorted(out):
+    print(v)
+PY
+)
+  if (( ${#SECRETS[@]} == 0 )); then
+    printf '! .monday-sync/ present but yielded no comparable values\n'
+    printf '  Cannot verify against a real install; other checks still apply.\n'
+  else
+    hits=""
+    for secret in "${SECRETS[@]}"; do
+      # -F: these are literal values, not patterns. A board name may contain
+      # regex metacharacters.
+      found=$(grep -rnF -- "$secret" "${FILES[@]}" 2>/dev/null) || true
+      [[ -n "$found" ]] && hits+="$found"$'\n'
+    done
+    if [[ -n "$hits" ]]; then
+      printf '\n✗ a value from your .monday-sync/ install appears in the skill\n'
+      printf '  %s\n' 'Logins, board names, repo slugs, and column ids are per-install.'
+      printf '  %s\n' 'They must be read from state at runtime, never written into these files.'
+      printf '%s' "$hits" | sed 's|^'"$ROOT"'/|    |'
+      FAIL=1
+    else
+      printf '✓ no value from the local install leaks into the skill (%d checked)\n' \
+        "${#SECRETS[@]}"
+    fi
+  fi
+
   printf '\n! .monday-sync/ present — exclude it from any shared copy\n'
   printf '  It contains a real board id, repo slug, and item mapping.\n'
 fi

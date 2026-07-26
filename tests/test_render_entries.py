@@ -31,17 +31,29 @@ class TestAttribution(unittest.TestCase):
     def test_plain_login_is_unchanged(self):
         self.assertEqual(render.display_author("alice"), "alice")
 
-    def test_strips_trailing_bot_suffix(self):
-        self.assertEqual(render.display_author("dependabot[bot]"), "dependabot")
+    def test_regression_a_bot_identity_is_never_displayed(self):
+        # This inverts the pre-1.8.0 rule, which stripped the suffix and
+        # shipped "dependabot" as the author. The Author column names a person;
+        # a bot has no human behind it, so unattributable is an error, not a
+        # value to display.
+        with self.assertRaises(render.UnresolvedAuthor):
+            render.display_author("dependabot[bot]")
 
-    def test_strips_only_a_trailing_suffix(self):
-        # A login that merely contains the substring must survive intact.
+    def test_a_login_merely_containing_bot_survives(self):
+        # A substring test here would reassign a real person's work.
         self.assertEqual(render.display_author("robotics"), "robotics")
+        self.assertEqual(render.display_author("botany"), "botany")
 
-    def test_automation_author_overrides_bot_authors(self):
+    def test_automation_author_attributes_bot_authors(self):
         self.assertEqual(
             render.display_author("dependabot[bot]", "maintainer"), "maintainer"
         )
+
+    def test_a_bot_automation_author_is_refused(self):
+        # Attributing one bot to another satisfies the letter of the rule and
+        # none of its point.
+        with self.assertRaises(render.UnresolvedAuthor):
+            render.display_author("dependabot[bot]", "other[bot]")
 
     def test_automation_author_does_not_touch_humans(self):
         # The override is scoped to [bot] authors. Re-attributing a real
@@ -51,17 +63,20 @@ class TestAttribution(unittest.TestCase):
     def test_none_login_does_not_raise(self):
         self.assertEqual(render.display_author(None), "")
 
-    def test_rendered_body_never_shows_the_bot_suffix(self):
-        html = html_for(author="dependabot[bot]")
+    def test_rendered_body_shows_the_human_not_the_service(self):
+        html = html_for(author="dependabot[bot]", automation_author="maintainer")
         self.assertNotIn("[bot]", html)
-        self.assertIn("Comment — dependabot", html)
+        self.assertNotIn("dependabot", html)
+        self.assertIn("Comment — maintainer", html)
 
     def test_no_bot_marking_in_output(self):
-        # Formatting must not branch on bot-ness: a bot entry and a human entry
-        # differ only by the name.
-        bot = html_for(author="dependabot[bot]", body="x")
-        human = html_for(author="dependabot", body="x")
-        self.assertEqual(bot, human)
+        # Formatting must not branch on bot-ness: once attribution is resolved,
+        # an entry that came from automation renders identically to one that
+        # did not. No badge, glyph, suffix, or separate treatment.
+        via_bot = html_for(author="dependabot[bot]", body="x",
+                           automation_author="maintainer")
+        direct = html_for(author="maintainer", body="x")
+        self.assertEqual(via_bot, direct)
 
 
 class TestTimestamps(unittest.TestCase):

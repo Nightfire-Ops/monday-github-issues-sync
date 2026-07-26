@@ -19,7 +19,6 @@ the same board can receive several repos.
   "lastSyncedAt": "2026-07-24T18:00:00Z",
   "autoApprove": false,
   "options": {
-    "assignTo": null,
     "automationAuthor": null,
     "excludeAuthors": [],
     "syncCommits": false,
@@ -42,8 +41,7 @@ the same board can receive several repos.
     "comments":   "numeric_mkabc133",
     "branch":     "text_mkabc134",
     "linked":     "text_mkabc135",
-    "lastSynced": "date_mkabc136",
-    "assignee":   "person"
+    "lastSynced": "date_mkabc136"
   },
   "groupMap": {
     "issues": "topics",
@@ -85,14 +83,13 @@ the same board can receive several repos.
 - **`truncatedBackfill`** — set when the per-item entry cap dropped history.
   Surface these in the run summary; they are the items where the monday feed is
   knowingly incomplete.
-- **`assignTo`** — `"me"`, a numeric monday user id, or `null`. When set, every
-  item created or updated gets that user in the board's people column, so rows
-  arrive already owned instead of needing manual assignment. Resolved once per
-  run; see `board-schema.md`.
-- **`automationAuthor`** — a GitHub login, or `null`. When set, events whose
-  raw author ends in `[bot]` are attributed to this login instead of the
-  service that opened them. An ownership view, not an authorship claim. Never
-  hardcode it in the skill; it is per-installation and lives only here.
+- **`automationAuthor`** — a GitHub login, or `null`. The **last resort** for
+  attributing a `[bot]`-authored item, used only when GitHub yields no human:
+  `scripts/resolve-authors.py` first tries the opener, the merger, whoever
+  enabled auto-merge, and the first approver. Set it to whoever is accountable
+  for automation. Never hardcode it in the skill — it is per-installation, it
+  lives only here, and `packaging/verify-portable.sh` fails if any value from
+  this file appears in the skill surface.
 - **`excludeAuthors`** — GitHub logins whose issues and PRs are not mirrored.
   Empty by default. Matching folds case and treats a trailing `[bot]` as
   optional on both sides, so `"depbot"` and `"depbot[bot]"` are the same

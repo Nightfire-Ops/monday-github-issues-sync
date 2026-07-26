@@ -24,7 +24,6 @@ they want to the board and this skill will not touch it.
 | `Branch` | `text` | PR head → base, empty for issues | yes |
 | `Linked` | `text` | `#12, #34` — linked issues for a PR, linked PRs for an issue | yes |
 | `Last Synced` | `date` (with time) | when this skill last wrote the item | yes |
-| `Person` / `Owner` | `people` | monday user assigned on create — see below | only when `assignTo` is set |
 
 `Type` and `GitHub State` are separate on purpose: a merged PR and a closed
 issue are not the same signal to a PM, and collapsing them loses the
@@ -136,40 +135,33 @@ Suggested colors when creating the `GitHub State` column: `Open` green,
 `Draft` grey, `Merged` purple, `Closed` dark red — matching GitHub's own
 palette so the board reads the same way as the repo.
 
-## Assignment
+## No monday assignment
 
-Without an assignee, every synced row lands unowned and somebody has to go
-through the board assigning them by hand. Set `options.assignTo` in state to
-avoid that:
+This skill does not touch any people column — not `Person`, not `Owner`, not
+`Assignee`. A GitHub issue has no opinion about who should own the monday row,
+and inventing one puts work in somebody's "My Work" queue on the strength of a
+guess.
 
-| `assignTo` | Behaviour |
-|---|---|
-| `"me"` | resolve the authenticated monday user via `get_user_context` and assign them |
-| a numeric user id | assign that user |
-| `null` (default) | do not touch any people column |
+Rows arrive unowned. Assigning them is a human decision made on the board.
 
-Resolve `"me"` **once per run**, at Step 1, and cache the numeric id in
-`columnMap`-adjacent state — do not call `get_user_context` per item.
+**GitHub assignees are not mapped to monday users either.** There is no
+reliable GitHub-login → monday-user mapping, and guessing by name assigns work
+to the wrong person. GitHub assignees stay in the `GitHub Assignees` text
+column, as text.
 
-**Which column.** Look for an existing `people`-type column titled `Person`,
-`Owner`, or `Assignee`, case-insensitively, and reuse the first match. A
-default monday board ships with `Person`, which is the column that feeds "My
-Work" and monday's own notifications — reusing it is what makes assignment
-actually useful. Create `Owner` only if no people column exists at all.
+## The Author column names a person, never a bot
 
-This is the one default column the skill will write to, and only when
-`assignTo` is set. `Status` and `Date` are still never touched.
+`Author` carries the human accountable for the change. A `[bot]` identity never
+appears there: no one's account pushed it, and "who filed this" is not what a
+PM is reading the column for.
 
-**Payload shape** — a people column takes ids, never names:
+Most items need no special handling — work pushed through a harness is authored
+by the developer's own GitHub account, with the tool recorded only as a
+`Co-Authored-By` trailer. Only genuine third-party apps install under their own
+identity. For those, `scripts/resolve-authors.py` walks GitHub for a human who
+actually touched the item; see its docstring for the chain.
 
-```json
-{ "personsAndTeams": [ { "id": 12345678, "kind": "person" } ] }
-```
-
-`kind` is `"person"` or `"team"`. Passing a display name silently produces an
-empty cell rather than an error, so always resolve to an id first.
-
-**GitHub assignees are not mapped to monday users.** There is no reliable
-GitHub-login → monday-user mapping, and guessing by name assigns work to the
-wrong person. GitHub assignees stay in the `GitHub Assignees` text column;
-`assignTo` controls the monday people column independently.
+Bot-ness stays visible through `Labels`, which carries real GitHub labels
+(`dependencies`, `github_actions`). That is a searchable fact about the change
+rather than something this skill invents, so a PM can still find every
+dependency bump without a bot's name sitting in an authorship field.
