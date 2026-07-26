@@ -119,12 +119,25 @@ def md_to_html(body, repo):
 
     body = re.sub(r"`([^`]+)`", r"<code>\1</code>", body)
     body = re.sub(r"\*\*([^*]+)\*\*", r"<b>\1</b>", body)
+    # Images first: ![alt](url) would otherwise match the link rule and produce
+    # a malformed "![alt</a>](...)" fragment. monday updates render <img>, but a
+    # badge adds nothing to a PM feed, so it degrades to a plain labelled link.
+    body = re.sub(r"!\[([^\]]*)\]\(([^)]+)\)", r'<a href="\2">\1</a>', body)
     body = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r'<a href="\2">\1</a>', body)
-    body = re.sub(
-        r"(?<![\w#/])#(\d+)\b",
-        rf'<a href="https://github.com/{repo}/issues/\1">#\1</a>',
-        body,
-    )
+    # Markdown link-reference definitions are invisible in GitHub's render and
+    # are pure noise in a feed.
+    body = re.sub(r"\[//\]: # \([^)]*\)(<br/>)?", "", body)
+    # Only cross-link #NNN when the body is the author's own prose. Bodies that
+    # embed an upstream changelog — dependency-bump PRs quote release notes
+    # inside <details> blocks — reference *another* repo's issue numbers, and
+    # linkifying those points at the wrong repository. Verified: an upstream
+    # "#408" rendered as a link to this repo's issue 408.
+    if "&lt;details&gt;" not in body:
+        body = re.sub(
+            r"(?<![\w#/])#(\d+)\b",
+            rf'<a href="https://github.com/{repo}/issues/\1">#\1</a>',
+            body,
+        )
     return body
 
 

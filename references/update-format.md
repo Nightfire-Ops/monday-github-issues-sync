@@ -64,6 +64,16 @@ bodies, and the issue/PR body all come from the same markdown source. Running
 the full conversion on the opened-entry but only HTML-escaping comments is an
 easy slip, and it shows up as raw `**bold**` scattered through the feed.
 
+**Do not cross-link `#NNN` inside quoted upstream content.** Dependency-bump
+PRs embed another project's release notes inside `<details>` blocks, and those
+`#408`-style references belong to *that* repo. Linkifying them points a PM at
+the wrong repository's issue — verified in a real sync. The renderer skips
+`#NNN` linkification entirely when the body contains an escaped `<details>`.
+
+**Convert images before links.** `![alt](url)` also matches the link pattern
+and yields a malformed nested anchor. Images run first and degrade to a plain
+labelled link — a badge adds nothing to a PM feed.
+
 **Escape `<`, `>`, `&` in the comment text before wrapping it in HTML.** Issue
 comments routinely contain stack traces, generics, and XML; unescaped they
 break the update body or vanish silently.
