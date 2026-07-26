@@ -1,6 +1,6 @@
 ---
 name: monday-github-issues-sync
-version: 1.2.0
+version: 1.2.1
 description: One-way sync of a GitHub repository's issues and pull requests into a monday.com board, preserving GitHub timestamps, so project management can see everything happening in development. Prompts for the repo URL and target board, backfills full history on first run, then syncs incrementally.
 allowed-tools:
   - AskUserQuestion
@@ -70,18 +70,28 @@ needed rather than after a bad run:
 scripts/update-skill.sh --check
 ```
 
-- **Up to date, or the check fails** (offline, `gh` unauthenticated, no access)
-  → say nothing and continue to Step 1. A failed update check must never block
-  a sync; it is a convenience, not a gate.
-- **Update available** → tell the user the two versions and ask, once:
+`--check` always exits 0 and prints exactly one line to stdout. Human narration
+goes to stderr — read stdout, ignore the exit code:
 
-  > A newer version of this skill is available (1.1.0 → 1.2.0). Update before
-  > running the sync?
+| stdout | Meaning | Do |
+|---|---|---|
+| `status=current installed=X upstream=X` | nothing to do | continue to Step 1 |
+| `status=update-available installed=X upstream=Y` | newer version exists | ask (below) |
+| `status=unavailable installed=X reason=<token>` | cannot tell — offline, `gh` unauthenticated, no access | continue to Step 1, say nothing |
 
-  On yes: run `scripts/update-skill.sh`, report the new version, then **re-read
-  `SKILL.md` from disk** — the steps below may have changed under you — and
-  start again from Step 1.
-  On no: continue with the installed version and do not ask again this session.
+`unavailable` is deliberately indistinguishable from `current` in effect. An
+update check must never block the work it precedes, so a failed check is
+silent — do not report it, do not retry, do not ask the user to fix `gh`.
+
+On `update-available`, ask once:
+
+> A newer version of this skill is available (1.1.0 → 1.2.0). Update before
+> running the sync?
+
+On yes: run `scripts/update-skill.sh` (this one *does* exit non-zero on real
+failure — report that), then **re-read `SKILL.md` from disk**, because the steps
+below may have changed under you, and start again from Step 1.
+On no: continue with the installed version and do not ask again this session.
 
 Skip Step 0 entirely when `options.autoApprove` is set: an unattended run must
 not stall on a prompt, and must not silently swap its own logic mid-flight.

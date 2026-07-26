@@ -71,9 +71,15 @@ The skill checks for updates when invoked and asks before applying one. You can
 also drive it directly:
 
 ```bash
-./scripts/update-skill.sh --check     # is there a newer version?
+./scripts/update-skill.sh --check     # prints one status line, always exits 0
 ./scripts/update-skill.sh             # update in place
 ```
+
+`--check` is safe to script: it always exits 0 and prints exactly one line to
+stdout — `status=current`, `status=update-available`, or `status=unavailable`
+with a reason — so "cannot reach the upstream" is handled the same as "nothing
+to do" without special-casing exit codes. Applying an update still exits
+non-zero on real failure.
 
 Updates come from the authenticated upstream configured in
 `scripts/update-skill.sh` — the single place the source repository is named.
