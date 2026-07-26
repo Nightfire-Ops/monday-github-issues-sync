@@ -20,15 +20,21 @@ against the board before writing, so **re-running never duplicates**.
 
 ## Install
 
-**Easiest — let Claude do it.** Paste this URL into Claude Code and ask it to
-install the skill:
+**Paste this into Claude Code:**
 
 ```
-https://github.com/Nightfire-Ops/monday-github-issues-sync
+Install the Claude Code skill from https://github.com/Nightfire-Ops/monday-github-issues-sync
+It is a PRIVATE repo — fetch it with `gh repo clone` (not WebFetch), then follow
+the CLAUDE.md at its root.
 ```
 
-Claude reads [CLAUDE.md](CLAUDE.md) in this repo, which tells it exactly where
-to put the skill, what to check, and what not to touch.
+The private-repo note matters: `raw.githubusercontent.com` and the repo page
+both return **404** to unauthenticated requests, so an agent that reaches for a
+plain HTTP fetch sees nothing and cannot discover `CLAUDE.md` on its own. Once
+cloned with `gh`, [CLAUDE.md](CLAUDE.md) tells Claude exactly where to install,
+what to check, and what not to touch.
+
+If the repo is ever made public, the URL alone is enough and the note can go.
 
 **Manually:**
 

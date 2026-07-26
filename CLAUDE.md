@@ -7,6 +7,11 @@ ask the user to run the steps themselves unless something fails.
 **What this is:** `monday-github-issues-sync`, a Claude Code skill that mirrors
 a GitHub repository's issues and pull requests into a monday.com board.
 
+**Access note:** this repository is private. Plain HTTP fetches of the repo page
+or `raw.githubusercontent.com` return 404 — use authenticated `gh` for every
+read. If you reached this file some other way and `gh` is not authenticated,
+stop and tell the user to run `gh auth login`; there is no anonymous path.
+
 ## Install
 
 1. **Pick a scope.** Ask the user only if it is ambiguous:
