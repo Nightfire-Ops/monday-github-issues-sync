@@ -133,11 +133,23 @@ def md_to_html(body, repo):
     # linkifying those points at the wrong repository. Verified: an upstream
     # "#408" rendered as a link to this repo's issue 408.
     if "&lt;details&gt;" not in body:
+        # Mask existing anchors before linkifying. A markdown link whose text
+        # already contains "#8" would otherwise get a second <a> nested inside
+        # the first — invalid HTML that renders as a broken double link.
+        # Observed live on an issue body reading "[Wayfinder map #8](...)".
+        anchors = []
+
+        def _stash(m):
+            anchors.append(m.group(0))
+            return f"\x00A{len(anchors) - 1}\x00"
+
+        body = re.sub(r"<a\b[^>]*>.*?</a>", _stash, body, flags=re.S)
         body = re.sub(
             r"(?<![\w#/])#(\d+)\b",
             rf'<a href="https://github.com/{repo}/issues/\1">#\1</a>',
             body,
         )
+        body = re.sub(r"\x00A(\d+)\x00", lambda m: anchors[int(m.group(1))], body)
     return body
 
 
@@ -176,11 +188,12 @@ def render(ev, repo, automation_author=None):
     author = display_author(ev.get("author"), automation_author)
     header = (ev.get("header") or default_header).format(author=author)
 
-    # The marker makes the posted feed self-describing: a later run can rebuild
-    # syncedEvents by reading updates back, without the state file. Invisible in
-    # the monday UI. See references/reconciliation.md.
+    # No HTML-comment marker here: monday's sanitiser strips <!-- --> from
+    # update bodies, verified by reading posted updates back. The durable
+    # identifier is the footer link's href, which carries #issuecomment-<id>
+    # and survives sanitisation. See references/reconciliation.md.
     parts = [
-        f'<div><!-- gh-event:{ev["key"]} -->',
+        "<div>",
         f'<b>[{fmt_ts(ev["at"])}] {glyph} {header}</b><br/>',
     ]
     if ev["kind"] == "opened":

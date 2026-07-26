@@ -101,35 +101,40 @@ Ordered, capped, and state-persisted after every batch. See `SKILL.md` Step 6.
 Items dedupe on identity; feed entries dedupe on **event key**
 (`comment:445566`, `review:778899`, `opened@<iso>` — see `state-file.md`).
 
-Every rendered entry embeds its key as an HTML comment:
+**monday strips HTML comments from update bodies.** An earlier design embedded
+`<!-- gh-event:comment:445566 -->` in each entry to make the feed
+self-describing; reading posted updates back proved the sanitiser removes it,
+along with rewriting `<br/>` to `<br>` and adding `target`/`rel` to anchors.
+Do not rely on injected markup surviving.
 
-```html
-<div><!-- gh-event:comment:445566 -->
-<b>[2026-07-20 14:32 UTC] 💬 Comment — someone</b><br/>
+What *does* survive is the **footer link's href**, which every entry carries and
+which already contains the GitHub identifier:
+
+```
+.../issues/123#issuecomment-445566   ->  comment:445566
+.../pull/45                         ->  opened (no comment fragment)
 ```
 
-The marker is invisible in the monday UI and makes the feed self-describing:
-the posted history itself records what has been synced, so `syncedEvents` can
-be rebuilt by reading updates back and extracting markers.
+So a feed can still be reconciled without the state file, by parsing hrefs out
+of the posted updates:
 
 ```
 posted = set()
-for update in item.updates:                      # newest-first from the API
-    if m := re.search(r"<!-- gh-event:(.+?) -->", update.body):
-        posted.add(m.group(1))
+for update in item.updates:
+    for m in re.finditer(r"#issuecomment-(\d+)", update.body):
+        posted.add(f"comment:{m.group(1)}")
 new_events = [e for e in events if e.key not in posted | state.syncedEvents]
 ```
 
-**Markers only exist on entries posted after this mechanism shipped.** For an
-item synced by an older version, or adopted with no state, the marker set is
-empty and re-posting would duplicate the feed. Two safe options, in order:
+This recovers comment and review identity exactly. It cannot distinguish an
+`opened` entry from any other entry lacking a fragment, so treat "an update
+exists whose href is the bare issue/PR URL" as evidence the opened entry was
+posted.
 
-1. **Trust state if present.** An adopted item with state keeps its history.
-2. **Watermark instead of replay.** For an adopted item with no state and no
-   markers, do *not* backfill. Set `lastEventAt` to now, post only events newer
-   than that, and record `adoptedAt` on the item. The feed is missing history
-   before adoption — say so in the run summary rather than risking a duplicate
-   of every comment.
+For an item adopted with no state at all, prefer the watermark path over
+replay: set `lastEventAt` to now, post only newer events, record `adoptedAt`,
+and say in the run summary that pre-adoption history is missing. Losing history
+is recoverable by a human reading GitHub; a duplicated feed is not.
 
 Never resolve this by matching on body text. Comments get edited, and a
 near-match is not an identity.
