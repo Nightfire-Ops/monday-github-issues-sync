@@ -21,7 +21,7 @@ mkdir -p "$OUT/references" "$OUT/packaging" "$OUT/scripts"
 cp "$ROOT/SKILL.md" "$ROOT/README.md" "$ROOT/CLAUDE.md" "$ROOT/VERSION" "$OUT/"
 cp "$ROOT/references/"*.md                               "$OUT/references/"
 cp "$ROOT/scripts/"*.py "$ROOT/scripts/"*.sh              "$OUT/scripts/"
-cp "$ROOT/packaging/INSTALL.md"                           "$OUT/"
+cp "$ROOT/INSTALL.md"                                    "$OUT/"
 cp "$ROOT/packaging/verify-portable.sh"                   "$OUT/packaging/"
 cp "$ROOT/packaging/build-share.sh"                       "$OUT/packaging/"
 chmod +x "$OUT/packaging/"*.sh "$OUT/scripts/"*.py "$OUT/scripts/"*.sh

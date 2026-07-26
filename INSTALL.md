@@ -47,11 +47,17 @@ mkdir -p .claude/skills
 cp -r monday-github-issues-sync .claude/skills/
 ```
 
-Verify it loaded:
+Verify it loaded — the skill is invoked as a slash command matching its
+directory name, so it must stay named `monday-github-issues-sync`:
 
 ```
 /monday-github-issues-sync
 ```
+
+If the command does not appear, start a new Claude Code session.
+
+You can also invoke it in plain language — "sync github issues to monday" —
+which matches the skill's declared triggers.
 
 ## 3. First run
 
@@ -126,6 +132,7 @@ Tunable options live in that file under `options`:
 
 | Option | Default | Effect |
 |---|---|---|
+| `assignTo` | `null` | assign every item to a monday user on create: `"me"` or a numeric user id |
 | `automationAuthor` | `null` | attribute `[bot]`-authored events to this GitHub login instead |
 | `syncCommits` | `false` | post each PR commit as a feed entry (noisy) |
 | `syncLabelEvents` | `false` | post label/assignment changes (costs per-item API calls) |
@@ -134,13 +141,28 @@ Tunable options live in that file under `options`:
 | `maxEntriesPerRun` | `1500` | total feed entries per run |
 | `autoApprove` | `false` | skip the plan confirmation — for scheduled runs only |
 
-## 7. Recurring sync
+## 7. Updating
+
+```bash
+./scripts/update-skill.sh --check     # is a newer version available?
+./scripts/update-skill.sh             # update in place
+./scripts/update-skill.sh --version 1.2.0
+```
+
+The updater replaces the skill surface only — `SKILL.md`, `references/`,
+`scripts/`, `packaging/`, `README.md`, `CLAUDE.md`, `VERSION`. Your
+`.monday-sync/` state, which holds the item mapping that prevents duplicate
+board rows, is never touched.
+
+Point it at a fork with `MONDAY_SYNC_UPSTREAM=owner/repo`.
+
+## 8. Recurring sync
 
 After a successful run, ask for recurring sync and the skill will set it up via
 the `schedule` skill. Unattended runs need `autoApprove: true` in the state
 file; set that deliberately, since it removes the confirmation step.
 
-## 8. Attribution
+## 9. Attribution
 
 Entries are attributed to the GitHub login that submitted them, taken from the
 event itself. A trailing `[bot]` suffix is stripped for display
@@ -153,7 +175,7 @@ instead of the service that opened it, set `automationAuthor` to a GitHub login
 in the state file. That is an ownership view — the named person did not write
 the change — so set it deliberately.
 
-## 9. Modifying and re-sharing
+## 10. Modifying and re-sharing
 
 No GitHub account, org, repo, monday account, board id, or workspace may be
 hardcoded in these files — all of them are runtime inputs. Before sharing a
@@ -167,7 +189,7 @@ It fails on emails, account subdomains, real board/item ids, generated column
 ids, concrete repo slugs, and any bot-labelling logic. Exit code 0 means the
 copy is safe to share.
 
-## 10. Layout
+## 11. Layout
 
 ```
 SKILL.md                        the skill — 7 steps
@@ -180,5 +202,5 @@ references/update-format.md     feed entry HTML, event glyphs, attribution
 scripts/reconcile.py            board reconciliation + sync plan
 scripts/render-entries.py       markdown → monday-HTML renderer
 packaging/verify-portable.sh    portability lint
-packaging/INSTALL.md            this file
+INSTALL.md                      this file
 ```
