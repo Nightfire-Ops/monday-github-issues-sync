@@ -1,6 +1,6 @@
 ---
 name: monday-github-issues-sync
-version: 1.4.1
+version: 1.4.2
 description: One-way sync of a GitHub repository's issues and pull requests into a monday.com board, preserving GitHub timestamps, so project management can see everything happening in development. Prompts for the repo URL and target board, backfills full history on first run, then syncs incrementally.
 allowed-tools:
   - AskUserQuestion
@@ -44,8 +44,9 @@ is preserved; only the columns this skill owns get overwritten.
 
 ## Hard constraints — read before designing anything on top of this
 
-1. **monday cannot backdate an update.** `create_update` stamps `created_at` as
-   now. GitHub time is therefore carried as (a) date columns on the item and
+1. **monday cannot backdate an update.** `create_update` accepts an
+   `original_creation_date` argument but ignores it — verified against a live
+   account in three formats; `created_at` is always now. GitHub time is therefore carried as (a) date columns on the item and
    (b) a `[YYYY-MM-DD HH:MM UTC]` prefix inside each update body. Events are
    posted oldest-first so the feed reads chronologically.
 2. **Volume is the main risk.** A repo with 400 issues and 20 events each is

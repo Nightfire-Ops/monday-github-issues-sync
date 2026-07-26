@@ -177,8 +177,9 @@ re-creating it makes the restore land as a duplicate.
 
 ## Known limits
 
-- **monday cannot backdate updates.** Feed entries are stamped with the time
-  they were posted, not when the GitHub event happened. Real GitHub time is in
+- **monday cannot backdate updates** — the API's `original_creation_date`
+  argument is accepted and silently ignored (tested). Entries are stamped with
+  the time they were posted, not when the GitHub event happened. Real GitHub time is in
   the bold prefix of every entry and in the item's date columns — build views
   and dashboards on the date columns, never on update timestamps.
 - **Commit-level and label-change history are off by default** — noisy, and

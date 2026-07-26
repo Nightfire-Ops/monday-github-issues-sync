@@ -14,8 +14,16 @@ scripts/render-entries.py OWNER/REPO < events.json > bodies.json
 
 ## The timestamp problem
 
-`create_update` has no parameter to set `created_at`. monday stamps it as now.
-A backfill of two years of history posts every entry with today's date.
+`create_update` **does** expose an `original_creation_date` argument — but it is
+silently ignored on this path. Verified against a live account with three
+variants (ISO-8601 with `Z`, ISO plus `use_app_info: true`, and a bare
+`YYYY-MM-DD`): every one returned a `created_at` of *now*. The argument is
+presumably honoured only for app/integration contexts the MCP server does not
+provide.
+
+So in practice monday stamps every update with the time it was posted, and a
+backfill of two years of history lands entirely on today's date. Do not spend
+time trying to make `original_creation_date` work — it has been tested.
 
 Mitigations, all three applied together:
 
