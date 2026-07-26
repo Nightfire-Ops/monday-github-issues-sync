@@ -192,7 +192,17 @@ It fails on emails, account subdomains, real board/item ids, generated column
 ids, concrete repo slugs, and any bot-labelling logic. Exit code 0 means the
 copy is safe to share.
 
-## 11. Layout
+## 11. Tests
+
+```bash
+python3 -m unittest discover -s tests
+```
+
+No dependencies. 75 tests covering markdown→HTML conversion, attribution,
+truncation, event keys, and the full reconcile→diff plan. Run them after any
+change to `scripts/`.
+
+## 12. Layout
 
 ```
 SKILL.md                        the skill — 7 steps
@@ -204,6 +214,7 @@ references/state-file.md        state schema, event keys, recovery
 references/update-format.md     feed entry HTML, event glyphs, attribution
 scripts/reconcile.py            board reconciliation + sync plan
 scripts/render-entries.py       markdown → monday-HTML renderer
+tests/                          unittest suite
 packaging/verify-portable.sh    portability lint
 INSTALL.md                      this file
 ```

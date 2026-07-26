@@ -99,7 +99,7 @@ git clone --depth 1 --quiet ${want:+--branch "v$target"} \
 
 # Replace skill surface only. .monday-sync/ is the user's data and is preserved.
 for path in SKILL.md README.md CLAUDE.md INSTALL.md VERSION \
-            references scripts packaging; do
+            references scripts packaging tests; do
   [[ -e "$tmp/src/$path" ]] || continue
   rm -rf "${HERE:?}/$path"
   cp -r "$tmp/src/$path" "$HERE/$path"

@@ -83,6 +83,17 @@ plain HTTPS — no auth required.
 The updater replaces the skill surface only and never touches `.monday-sync/`,
 which holds the item mapping that prevents duplicate board rows.
 
+## If you modify the skill
+
+Run the tests — they are stdlib `unittest`, no install needed:
+
+```bash
+python3 -m unittest discover -s tests
+```
+
+Tests named `test_regression_*` encode bugs that reached a live board. If one
+fails, you have reintroduced a real defect; do not delete or relax the test.
+
 ## Do not
 
 - Rename the directory — it breaks the slash command.

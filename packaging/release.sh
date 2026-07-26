@@ -19,6 +19,23 @@ PUBLISH=false; [[ "${2:-}" == "--publish" ]] && PUBLISH=true
 cd "$ROOT"
 echo "── releasing $NAME $VER ──"
 
+echo
+echo "── tests ──"
+# Gate on the suite, not just the lint. Every renderer bug that reached a live
+# board is encoded as a regression test; shipping past a failure undoes that.
+#
+# The status is captured explicitly, NOT piped. `cmd | tail` exits with tail's
+# status — always 0 — so a piped test run silently passes a failing suite. That
+# mistake was made here once already; do not reintroduce the pipe.
+if ! test_out="$(PYTHONPATH=tests python3 -m unittest discover -s tests -q 2>&1)"; then
+  printf '%s\n' "$test_out" | tail -25
+  echo
+  echo "✗ tests failed — refusing to release" >&2
+  exit 1
+fi
+printf '%s\n' "$test_out" | tail -2
+
+echo
 echo "$VER" > VERSION
 # Keep the SKILL.md frontmatter version in lockstep — it is what users see.
 sed -i -E "0,/^version: .*/s//version: $VER/" SKILL.md

@@ -134,6 +134,25 @@ item mapping that prevents duplicates — is never touched.
 
 Point it at a different fork with `MONDAY_SYNC_UPSTREAM=owner/repo`.
 
+## Tests
+
+```bash
+python3 -m unittest discover -s tests    # no dependencies
+PYTHONPATH=tests pytest tests/           # if you prefer pytest
+```
+
+75 tests, 99% statement coverage of both scripts. Stdlib `unittest` on purpose —
+cloning the skill and verifying it should not require installing anything.
+
+Tests named `test_regression_*` each encode a bug that reached a live monday
+board: the doubled footer link, cross-repo `#NNN` linkification inside quoted
+upstream changelogs, nested anchors, unescaped HTML in comment bodies, and
+state-loss duplicating the board. Every one was verified to fail when its fix is
+reverted, so they are regression tests in fact and not just in name.
+
+`packaging/release.sh` runs the suite before building; a failure blocks the
+release.
+
 ## Releasing
 
 Maintainers only:
@@ -202,6 +221,7 @@ references/state-file.md        state schema, event keys, recovery
 references/update-format.md     feed entry HTML, glyphs, attribution
 scripts/reconcile.py            board reconciliation + sync plan
 scripts/render-entries.py       markdown → monday-HTML renderer
+tests/                          unittest suite (99% coverage)
 scripts/update-skill.sh         in-place updater
 packaging/release.sh            version bump + dist + zip + publish
 packaging/verify-portable.sh    portability lint
