@@ -7,6 +7,7 @@ up here instead of as duplicate rows in front of a PM.
 
 Run: python3 -m unittest discover -s tests   (or pytest tests/)
 """
+import json
 import unittest
 
 from helpers import board, gh_issue, reconcile, url_for
@@ -89,10 +90,10 @@ class TestBoardObservations(unittest.TestCase):
         self.assertEqual(dupes, {})
 
 
-class TestDiff(unittest.TestCase):
+class PlanCase(unittest.TestCase):
     """End-to-end plan shape, driven through the same code path the skill uses."""
 
-    def plan(self, board_rows, gh_rows, state=None, comments=None):
+    def plan(self, board_rows, gh_rows, state=None, comments=None, extra_argv=()):
         """Run reconcile.main() in-process and return the emitted plan.
 
         In-process rather than via subprocess so coverage sees the real code
@@ -118,6 +119,7 @@ class TestDiff(unittest.TestCase):
         if state is not None:
             (tmp / "state.json").write_text(json.dumps(state))
             argv += ["--state", str(tmp / "state.json")]
+        argv += list(extra_argv)
 
         out, err = io.StringIO(), io.StringIO()
         old_argv = sys.argv
@@ -141,6 +143,8 @@ class TestDiff(unittest.TestCase):
             }
         }
 
+
+class TestDiff(PlanCase):
     def test_first_run_creates_everything(self):
         plan = self.plan([], [gh_issue(1), gh_issue(2)])
         self.assertEqual(len(plan["create"]), 2)
@@ -264,9 +268,154 @@ class TestDiff(unittest.TestCase):
         plan = self.plan(
             [(999, "Someone's own row", None)], [gh_issue(1)], state=None
         )
+        # Serialised, not `in plan` — that form only inspects top-level keys and
+        # would pass for a deletion proposed inside any nested value.
         for forbidden in ("delete", "archive", "remove"):
-            self.assertNotIn(forbidden, plan)
+            self.assertNotIn(forbidden, json.dumps(plan).lower())
         self.assertEqual(plan["unmanagedItems"], 1)
+
+
+class TestExcludeAuthors(PlanCase):
+    """`options.excludeAuthors` — keep an author's items off the board.
+
+    Motivated by a repo where 7 of 8 PRs were dependency bumps and drowned the
+    human work. The filter is deliberately *item-scoped*: it decides which
+    issues and PRs get mirrored, not which feed entries get posted. An excluded
+    author commenting on somebody else's issue is part of that conversation and
+    still appears.
+    """
+
+    def excluding(self, *logins):
+        return {"options": {"excludeAuthors": list(logins)}}
+
+    def test_no_exclusions_configured_changes_nothing(self):
+        plan = self.plan([], [gh_issue(1, author="someone")], self.excluding())
+        self.assertEqual([c["key"] for c in plan["create"]], ["issue/1"])
+        self.assertEqual(plan["excluded"], [])
+
+    def test_excluded_author_item_is_not_created(self):
+        plan = self.plan(
+            [], [gh_issue(1, author="autobumper")], self.excluding("autobumper")
+        )
+        self.assertEqual(plan["create"], [])
+        self.assertEqual([e["key"] for e in plan["excluded"]], ["issue/1"])
+
+    def test_other_authors_are_unaffected(self):
+        plan = self.plan(
+            [],
+            [gh_issue(1, author="autobumper"), gh_issue(2, author="a-person")],
+            self.excluding("autobumper"),
+        )
+        self.assertEqual([c["key"] for c in plan["create"]], ["issue/2"])
+
+    def test_bot_suffix_is_optional_on_both_sides(self):
+        # GitHub appends [bot] to app accounts. A user configuring the filter
+        # types the name they see in the UI; either form must match, or the
+        # filter silently does nothing and the board fills up anyway.
+        bare = self.plan(
+            [], [gh_issue(1, author="autobumper[bot]")], self.excluding("autobumper")
+        )
+        suffixed = self.plan(
+            [], [gh_issue(1, author="autobumper")], self.excluding("autobumper[bot]")
+        )
+        self.assertEqual(bare["create"], [])
+        self.assertEqual(suffixed["create"], [])
+
+    def test_matching_is_case_insensitive(self):
+        plan = self.plan(
+            [], [gh_issue(1, author="AutoBumper")], self.excluding("autobumper")
+        )
+        self.assertEqual(plan["create"], [])
+
+    def test_blank_entries_never_match(self):
+        # A stray "" in the list must not exclude everything — least of all the
+        # items whose author GitHub omitted.
+        plan = self.plan(
+            [],
+            [gh_issue(1, author="a-person"), gh_issue(2, author=None)],
+            self.excluding("", "   ", None),
+        )
+        self.assertEqual(sorted(c["key"] for c in plan["create"]),
+                         ["issue/1", "issue/2"])
+        self.assertEqual(plan["excluded"], [])
+
+    def test_item_with_no_author_is_never_excluded(self):
+        # A deleted GitHub account leaves user: null. Dropping those rows would
+        # lose real history to a config value that never named them.
+        plan = self.plan(
+            [], [gh_issue(1, author=None)], self.excluding("autobumper")
+        )
+        self.assertEqual([c["key"] for c in plan["create"]], ["issue/1"])
+
+    def test_excluded_item_already_on_board_stops_being_updated(self):
+        state = self.excluding("autobumper")
+        state["itemMap"] = {
+            "pr/1": {"mondayItemId": 111, "updatedAt": "2026-07-01T00:00:00Z",
+                     "syncedEvents": []}
+        }
+        plan = self.plan(
+            [(111, "#1 bump", url_for(1, pr=True))],
+            [gh_issue(1, pr=True, author="autobumper",
+                      updated="2026-07-09T00:00:00Z")],
+            state,
+        )
+        self.assertEqual(plan["update"], [])
+        self.assertEqual(plan["skip"], [])
+
+    def test_excluded_item_on_board_is_named_with_its_monday_id(self):
+        # Exclusion never removes a row that is already there. Naming the id is
+        # what lets a human decide, per the deletion policy.
+        plan = self.plan(
+            [(111, "#1 bump", url_for(1, pr=True))],
+            [gh_issue(1, pr=True, author="autobumper")],
+            self.excluding("autobumper"),
+        )
+        self.assertEqual(plan["excluded"][0]["mondayItemId"], "111")
+        self.assertIn("already on the board", self.summary)
+
+    def test_excluded_item_on_board_is_not_adopted_into_state(self):
+        # Adoption means "this skill manages it". An excluded item is not
+        # managed, so it must not appear in the repair list.
+        plan = self.plan(
+            [(111, "#1 bump", url_for(1, pr=True))],
+            [gh_issue(1, pr=True, author="autobumper")],
+            self.excluding("autobumper"),
+        )
+        self.assertEqual(plan["adopted"], [])
+
+    def test_exclusion_never_proposes_a_deletion(self):
+        plan = self.plan(
+            [(111, "#1 bump", url_for(1, pr=True))],
+            [gh_issue(1, pr=True, author="autobumper")],
+            self.excluding("autobumper"),
+        )
+        for forbidden in ("delete", "archive", "remove"):
+            self.assertNotIn(forbidden, json.dumps(plan).lower())
+
+    def test_cli_flag_excludes_without_a_state_file(self):
+        # First run: the plan is built before any state exists, so the answer to
+        # "should I filter these out?" has to be expressible on the command line.
+        plan = self.plan(
+            [], [gh_issue(1, author="autobumper")], state=None,
+            extra_argv=["--exclude-author", "autobumper"],
+        )
+        self.assertEqual(plan["create"], [])
+
+    def test_cli_and_state_exclusions_are_unioned(self):
+        plan = self.plan(
+            [],
+            [gh_issue(1, author="autobumper"), gh_issue(2, author="otherbot")],
+            self.excluding("autobumper"),
+            extra_argv=["--exclude-author", "otherbot"],
+        )
+        self.assertEqual(plan["create"], [])
+        self.assertEqual(len(plan["excluded"]), 2)
+
+    def test_summary_reports_the_excluded_count(self):
+        self.plan(
+            [], [gh_issue(1, author="autobumper")], self.excluding("autobumper")
+        )
+        self.assertIn("excluded", self.summary)
 
 
 if __name__ == "__main__":

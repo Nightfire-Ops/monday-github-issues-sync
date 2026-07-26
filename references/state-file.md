@@ -21,6 +21,7 @@ the same board can receive several repos.
   "options": {
     "assignTo": null,
     "automationAuthor": null,
+    "excludeAuthors": [],
     "syncCommits": false,
     "syncLabelEvents": false,
     "maxItemsPerRun": 100,
@@ -92,8 +93,34 @@ the same board can receive several repos.
   raw author ends in `[bot]` are attributed to this login instead of the
   service that opened them. An ownership view, not an authorship claim. Never
   hardcode it in the skill; it is per-installation and lives only here.
+- **`excludeAuthors`** — GitHub logins whose issues and PRs are not mirrored.
+  Empty by default. Matching folds case and treats a trailing `[bot]` as
+  optional on both sides, so `"depbot"` and `"depbot[bot]"` are the same
+  filter — a user configures the name they see in the UI. Blank entries never
+  match, so a stray `""` cannot exclude everything, and an item whose author
+  GitHub omitted (deleted account) is never excluded. See *Exclusion is
+  item-scoped* below.
 - **`autoApprove`** — when true, skip the Step 5 confirmation. Intended for
   scheduled runs. Set it deliberately, not as a convenience during setup.
+
+## Exclusion is item-scoped
+
+`excludeAuthors` decides which issues and PRs become board items. It does
+**not** filter feed entries. An excluded author commenting on somebody else's
+issue is part of that conversation — dropping the comment would remove context
+from an item the filter never named.
+
+Three consequences worth knowing before setting it:
+
+- **Rows already on the board stay.** An item that predates the exclusion is
+  reported with its monday id and then left alone: not updated, and never
+  removed. Removal is a proposal to a human like every other deletion.
+- **Its state entry is kept too.** Nothing is discarded, so clearing the
+  exclusion resumes normal syncing for that item immediately.
+- **Un-excluding does not backfill.** `lastSyncedAt` advanced past those items
+  while they were filtered, so an incremental run will not see them again. To
+  bring them in, clear `lastSyncedAt` and let the next run do a full pass —
+  reconciliation makes that safe, it will not duplicate what is already there.
 
 ## Event keys
 

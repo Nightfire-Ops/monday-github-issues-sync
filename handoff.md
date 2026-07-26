@@ -14,7 +14,7 @@ A Claude Code skill that mirrors a GitHub repo's issues and pull requests into a
 monday.com board (one-way, GitHub → monday), so PM can see development activity
 without living in GitHub.
 
-- **Latest release:** v1.6.0
+- **Latest release:** v1.7.0
 - **Invoked as:** `/monday-github-issues-sync`
 
 **Do not re-read the design from this document.** `SKILL.md` is the entry point;
@@ -25,8 +25,9 @@ without living in GitHub.
 
 | Item | State |
 |---|---|
-| Skill + docs + scripts | complete, v1.6.0, 8 portability checks passing |
-| Test suite | 75 tests, 99% coverage on both scripts, gates releases |
+| Skill + docs + scripts | complete, v1.7.0, 8 portability checks passing |
+| Test suite | 89 tests, 99% coverage on both scripts, gates releases |
+| `options.excludeAuthors` | shipped in v1.7.0; never yet run against a board |
 | Live backfill | complete: 26 items, 50 feed entries, all assigned |
 | Doubled-link repair (17 entries) | done, verified by reading bodies back |
 | Test board placeholders / 2nd board | deleted |
@@ -103,6 +104,16 @@ Established empirically; documented in `references/board-schema.md` and
   to a configured login (an *ownership* view, not an authorship claim). The lint
   fails on bot-labelling constructs; tests assert a bot entry and a human entry
   render identically.
+- **`excludeAuthors` is item-scoped, and that is deliberate.** It filters which
+  issues and PRs become board items; it does **not** filter feed entries. An
+  excluded author commenting on a mirrored item is part of that conversation,
+  and dropping the comment would strip context from an item the filter never
+  named. Three more decisions worth not re-litigating: rows already on the
+  board are named and frozen, never removed (deletion policy); excluded items
+  are not adopted into state, because adoption claims a row as managed; and
+  matching folds case *and* the `[bot]` suffix, so a user typing what they see
+  on GitHub gets the filter they expected instead of a silent no-op. The
+  un-exclude/backfill trap is documented in `references/state-file.md`.
 - **Portability is enforced.** No GitHub/monday account, org, repo, board,
   column, or user id hardcoded. `./packaging/verify-portable.sh` has 8 checks,
   each negative-tested. Upstream slug allowed only in README/CLAUDE/INSTALL and
@@ -110,6 +121,15 @@ Established empirically; documented in `references/board-schema.md` and
 - **Releases:** `./packaging/release.sh X.Y.Z --publish` — tests, lint, VERSION
   bump, SKILL.md frontmatter stamp, `dist/` rebuild, versioned + latest zips,
   tag, push, GitHub release. Blocks on test or lint failure.
+
+## Known wart
+
+`.coverage` is **committed and not gitignored**. It is a throwaway artifact from
+the coverage venv, and being a SQLite file it embeds absolute paths — the
+author's home directory and username are inside it, in a public repo. The
+portability lint does not catch it because it only scans `.md`/`.py`/`.json`.
+Fix is `git rm --cached .coverage` plus a `.gitignore` line; left alone here
+because removing a tracked file was outside the change that found it.
 
 ## Process lessons — these cost real time
 
@@ -139,8 +159,9 @@ Established empirically; documented in `references/board-schema.md` and
   session — reasoned but untested.
 - Recurring sync via the `schedule` skill (`options.autoApprove: true` skips the
   plan confirmation and the Step 0 update check).
-- Consider `options.excludeAuthors` — 7 of 8 PRs on the test repo are dependency
-  bumps and dominate the PR rows.
+- **Exercise `excludeAuthors` against the live board.** It shipped in 1.7.0 with
+  14 tests, but nothing about it has touched a real board — the noisy-PR case
+  that motivated it is right there to try it on.
 - `syncCommits` and `syncLabelEvents` are off by default and unexercised.
 - No integration test touches the monday MCP; everything MCP-side was validated
   by hand. A fake-MCP harness would close that gap if the skill grows.

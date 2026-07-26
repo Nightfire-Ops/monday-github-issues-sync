@@ -74,7 +74,9 @@ Decide per item, and **per field**. Do not rewrite all 14 columns because one
 changed; that floods the monday activity log and makes real edits invisible.
 
 ```
-if key not in observed:          -> CREATE item, then backfill events
+if author in options.excludeAuthors:
+                                 -> EXCLUDE: no create, no update, no removal
+elif key not in observed:        -> CREATE item, then backfill events
 elif gh.updated_at > state.updatedAt:
      changed = fields_that_differ(gh, board_item)
      if changed: -> UPDATE only those columns
@@ -91,6 +93,22 @@ rewrite. See `board-schema.md`.
 `updated_at` is a cheap gate, not a decision: GitHub bumps it for events this
 skill does not sync (reactions, projects, subscriptions). Always confirm with a
 field-level diff before writing.
+
+### Exclusion is a filter, not a removal
+
+`options.excludeAuthors` drops an item out of the diff entirely — it is not
+created, not updated, and **not deleted if it is already there**. An item
+excluded after it was already mirrored is reported with its monday id and left
+exactly as it stands; taking it off the board is a proposal to a human, like
+every other deletion.
+
+Excluded items are also not **adopted**. Adoption means "this skill manages
+this row", and the run must not claim rows it has stopped keeping current.
+
+The filter reads the item's own author (`user.login`). It does not filter feed
+entries: an excluded author commenting on an item that *is* mirrored is part of
+that conversation. See `state-file.md` for the matching rules and for why
+un-excluding does not retroactively backfill.
 
 ## Phase 3 — Apply
 
@@ -154,12 +172,18 @@ Reconciled 26 board items against 26 GitHub items
   to create      0
 ```
 
-Duplicates and adoptions are always named individually, not just counted.
+Duplicates and adoptions are always named individually, not just counted. So
+are excluded items that are already on the board — those are rows a human may
+want gone, and nothing here will take them off.
+
+An `excluded` line appears only when `excludeAuthors` is set and matched
+something; a filter that silently matches nothing is worse than no filter.
 
 ## What is never done automatically
 
 - **Deleting or archiving a monday item.** Items carry human comments this
-  skill did not write. Report and let a person decide.
+  skill did not write. Report and let a person decide. This includes rows whose
+  author was added to `excludeAuthors` after they were mirrored.
 - **Touching an item with no `GitHub URL`.** That is somebody's own row.
 - **Writing to columns outside `columnMap`.** Humans own the rest of the board.
 - **Re-posting an edited comment.** Comment ids are stable across edits; an

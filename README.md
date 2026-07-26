@@ -109,6 +109,30 @@ without a `GitHub URL`, so hand-created items are never touched.
 You can also invoke it in plain language — "sync github issues to monday",
 "mirror our repo into the board" — which matches the skill's triggers.
 
+### Keeping automation off the board
+
+Dependency-bump PRs can outnumber human work several to one and bury it. When
+the sync sees automation authors it offers three choices, once, before the
+first write: keep them as they are, attribute them to a GitHub login who owns
+that work, or leave their items off the board entirely.
+
+The last one is `options.excludeAuthors` in the state file — a list of logins,
+matched case-insensitively with the `[bot]` suffix optional, so you can type
+the name you see on GitHub:
+
+```json
+"options": { "excludeAuthors": ["some-bumper"] }
+```
+
+It filters which issues and PRs become board items. It does not filter comments
+— an excluded author replying on somebody else's issue still shows up there,
+because that is part of the conversation.
+
+Adding a login later does **not** remove rows it already created. Those are
+named in the run summary and stop updating; taking them off the board is your
+call, and the skill will ask before doing anything. See
+`references/state-file.md`.
+
 ## Update
 
 The skill checks for updates when invoked and asks before applying one. You can

@@ -6,12 +6,16 @@ itself, repairs state, then diffs. Read-only — it decides, it does not write.
 
 Usage:
   reconcile.py OWNER/REPO --board board_items.json --github issues.json \
-               [--state state.json] [--comments comments.json]
+               [--state state.json] [--comments comments.json] \
+               [--exclude-author LOGIN ...]
 
 board_items.json  : get_board_items_page output (needs the GitHub URL column)
 issues.json       : gh api repos/O/R/issues?state=all output
 comments.json     : gh api repos/O/R/issues/comments output (optional)
 state.json        : existing .monday-sync/*.json (optional; absent = first run)
+--exclude-author  : skip items opened by this login (repeatable). Unioned with
+                    options.excludeAuthors from state. Item-scoped: it filters
+                    which issues/PRs are mirrored, not which comments post.
 
 Emits a JSON plan on stdout and a human summary on stderr. Exit 0 always —
 "nothing to do" is a valid outcome, not a failure.
@@ -36,6 +40,46 @@ def parse_key(text):
         return None, None
     owner, repo, kind, num = m.groups()
     return f"{owner}/{repo}".lower(), f"{'pr' if kind == 'pull' else 'issue'}/{num}"
+
+
+def normalize_login(login):
+    """Fold a GitHub login to the form exclusions are compared in.
+
+    Case is irrelevant, and the trailing `[bot]` on app accounts is an artefact
+    of how GitHub names them rather than part of the identity a person types.
+    Folding both sides means a user who configures the name they see in the UI
+    gets the filter they expected instead of one that silently never matches.
+
+    Returns "" for anything empty; "" is never a member of the exclusion set,
+    so an author GitHub omitted cannot be filtered out by a blank config entry.
+    """
+    return re.sub(r"\[bot\]$", "", (login or "").strip().lower())
+
+
+def excluded_logins(state, cli_logins):
+    """The set of logins whose items this run will not mirror.
+
+    Union of `options.excludeAuthors` in state and any --exclude-author flags.
+    The flag exists for the first run, where the plan is built before a state
+    file has been written and the answer still has to be expressible.
+    """
+    configured = (state.get("options") or {}).get("excludeAuthors") or []
+    raw = [x for x in list(configured) + list(cli_logins or []) if isinstance(x, str)]
+    return {n for n in (normalize_login(x) for x in raw) if n}
+
+
+def item_author(src):
+    """The login that opened an issue/PR, or "" when GitHub omitted it."""
+    return normalize_login((src.get("user") or {}).get("login"))
+
+
+def item_key(src):
+    """'issue/123' or 'pr/45' for a row from the GitHub issues endpoint.
+
+    Namespaced because a repo can have issue #45 and PR #45; the endpoint
+    returns both and only the `pull_request` key tells them apart.
+    """
+    return ("pr/" if src.get("pull_request") else "issue/") + str(src["number"])
 
 
 def load(path):
@@ -82,6 +126,9 @@ def main():
     ap.add_argument("--github", required=True)
     ap.add_argument("--state")
     ap.add_argument("--comments")
+    ap.add_argument("--exclude-author", action="append", metavar="LOGIN",
+                    help="skip items opened by this login; repeatable. Merged "
+                         "with options.excludeAuthors from --state.")
     a = ap.parse_args()
 
     repo = a.repo
@@ -92,9 +139,31 @@ def main():
     item_map = state.get("itemMap", {})
 
     observed, dupes, foreign, unmanaged = board_observations(board, repo)
+    excluded_authors = excluded_logins(state, a.exclude_author)
+
+    # --- Author exclusion ------------------------------------------------
+    # Item-scoped on purpose: it decides which issues and PRs are mirrored, not
+    # which feed entries are posted. An excluded author commenting on somebody
+    # else's issue is part of that conversation and still appears.
+    excluded = []
+    if excluded_authors:
+        for src in gh:
+            if item_author(src) in excluded_authors:
+                key = item_key(src)
+                excluded.append({
+                    "key": key,
+                    "number": src["number"],
+                    "author": (src.get("user") or {}).get("login"),
+                    # Non-null means the row predates the exclusion. It stays:
+                    # removal is proposed to a human, never done here.
+                    "mondayItemId": observed.get(key),
+                })
+    excluded_keys = {e["key"] for e in excluded}
 
     # --- Phase 1: repair state against the board -------------------------
-    adopted = [k for k in observed if k not in item_map]
+    # An excluded item on the board is not adopted — adoption would claim it as
+    # managed, and this run manages nothing it will not also keep current.
+    adopted = [k for k in observed if k not in item_map and k not in excluded_keys]
     dropped = [k for k in item_map if k not in observed]
 
     # --- events present on GitHub, bucketed by item ----------------------
@@ -108,7 +177,9 @@ def main():
     create, update, skip = [], [], []
     for src in gh:
         num = str(src["number"])
-        key = ("pr/" if src.get("pull_request") else "issue/") + num
+        key = item_key(src)
+        if key in excluded_keys:
+            continue
         st = item_map.get(key, {})
         gh_keys = [f"opened@{src['created_at']}"] + events.get(num, [])
         synced = set(st.get("syncedEvents", []))
@@ -135,7 +206,7 @@ def main():
     plan = {"repo": repo, "create": create, "update": update,
             "skip": skip, "adopted": adopted, "dropped": dropped,
             "duplicates": dupes, "foreignRepoItems": foreign,
-            "unmanagedItems": unmanaged}
+            "unmanagedItems": unmanaged, "excluded": excluded}
     json.dump(plan, sys.stdout, indent=1)
     print()
 
@@ -147,12 +218,19 @@ def main():
     w(f"  skipped      {len(skip):>3}   (unchanged since last sync)\n")
     w(f"  to update    {len(update):>3}\n")
     w(f"  to create    {len(create):>3}\n")
+    if excluded:
+        w(f"  excluded     {len(excluded):>3}   (author in excludeAuthors)\n")
     if foreign:
         w(f"  ignored      {foreign:>3}   (items from a different repo)\n")
     if unmanaged:
         w(f"  untouched    {unmanaged:>3}   (no GitHub URL — not ours)\n")
     for k, ids in dupes.items():
         w(f"  ! duplicate {k}: extra monday items {ids}\n")
+    # Named individually, because these are rows a human may want gone and
+    # nothing here will ever take them off the board.
+    for e in (x for x in excluded if x["mondayItemId"]):
+        w(f"  ! {e['key']} already on the board as item {e['mondayItemId']}"
+          f" — left untouched, no longer updated\n")
 
 
 if __name__ == "__main__":

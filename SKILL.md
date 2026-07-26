@@ -219,7 +219,9 @@ scripts/reconcile.py OWNER/REPO \
 ```
 
 It emits the plan as JSON on stdout and the summary on stderr. Use its output
-as Step 6's plan rather than recomputing by hand.
+as Step 6's plan rather than recomputing by hand. It reads `options` out of the
+state file, so `excludeAuthors` applies without extra arguments; add
+`--exclude-author LOGIN` only for a first run, where no state exists yet.
 
 If the file exists but `boardId` inside it disagrees with the resolved board,
 stop and ask — the board was changed or the file was copied.
@@ -290,6 +292,7 @@ For each fetched issue/PR, decide against state:
 
 | Condition | Action |
 |---|---|
+| Author in `options.excludeAuthors` | **exclude** — no create, no update, no removal |
 | Not in `itemMap` | **create** item + backfill its events |
 | In `itemMap`, `updatedAt` newer than stored | **update** columns + append new events |
 | In `itemMap`, unchanged | **skip** |
@@ -311,15 +314,37 @@ Cap:   this run will process 100 items; re-run to continue
 ```
 
 **If any fetched author carries a `[bot]` suffix**, report the count alongside
-the plan and offer the ownership override once, here:
+the plan and offer both automation options once, here:
 
-> 7 of 8 PRs were opened by automation (`dependabot`). Attribute these to a
-> specific GitHub login instead — e.g. whoever owns dependency upgrades — or
-> keep the original submitter?
+> 7 of 8 PRs were opened by automation (`dependabot`). You can:
+> **keep** the original submitter, **attribute** them to a specific GitHub
+> login — e.g. whoever owns dependency upgrades — or **exclude** that author's
+> items from the board entirely.
 
-Record the answer as `options.automationAuthor` in state so it is not asked
-again. Default to keeping the real submitter if the user does not care. Never
-suggest a specific login; read it from the user.
+Record the answer in state so it is not asked again — `options.automationAuthor`
+for attribution, `options.excludeAuthors` for exclusion. Default to keeping the
+real submitter if the user does not care. Never suggest a specific login; read
+it from the user.
+
+Exclusion changes the plan, so **re-run the reconcile from Step 3** with the
+chosen logins and show the revised counts before writing:
+
+```bash
+scripts/reconcile.py OWNER/REPO … --exclude-author LOGIN
+```
+
+The flag is for this moment, before state exists. Once the answer is written to
+`options.excludeAuthors`, later runs pick it up from `--state` and the flag is
+not needed.
+
+`excludeAuthors` is item-scoped: it filters which issues and PRs become board
+items, not which feed entries get posted. An excluded author commenting on
+somebody else's issue still appears there — see `references/state-file.md`.
+
+**Items already on the board when a filter is added are left alone**, not
+removed. The reconcile names each one with its monday id; surface those in the
+plan and, if the user wants them gone, follow the deletion policy below — ask,
+never act. Also say plainly that the rows will stop updating.
 
 Then confirm before writing.
 
@@ -371,6 +396,8 @@ Summarize:
 - items created / updated / skipped
 - feed entries posted
 - new watermark
+- items excluded by `options.excludeAuthors`, and — named individually — any of
+  them that are already on the board and have stopped updating
 - anything skipped, capped, truncated, or flagged, and the command to continue
 - any board schema substitutions made in Step 3
 
@@ -389,6 +416,7 @@ destructive action is proposed and waits for an explicit yes.
 | Duplicate items found | names them, keeps the oldest, **asks** before touching the rest |
 | Item 404s on GitHub (deleted or transferred) | flags it, **leaves the monday item alone** |
 | monday placeholder rows (`Item 1`…`Item 5`) | **offers** to archive them; never archives unasked |
+| Item on the board whose author was later excluded | names it, stops updating it, **asks** before anything else |
 | Existing column with a conflicting type | creates a suffixed column instead of retyping |
 | Rows with no `GitHub URL` | untouched — that is somebody else's work |
 | Human comments in an item's Updates feed | never removed; the skill only appends |

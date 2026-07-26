@@ -61,12 +61,18 @@ def board(*rows):
 
 
 def gh_issue(number, pr=False, updated="2026-07-01T00:00:00Z", **kw):
-    """Build a GitHub issues-endpoint row."""
+    """Build a GitHub issues-endpoint row.
+
+    `author` is a convenience for the nested `user.login` the API returns; pass
+    `author=None` to model a row whose author GitHub omitted (deleted account).
+    """
+    author = kw.pop("author", "someone")
     row = {
         "number": number,
         "created_at": kw.pop("created", "2026-07-01T00:00:00Z"),
         "updated_at": updated,
         "state": kw.pop("state", "open"),
+        "user": {"login": author} if author is not None else None,
     }
     if pr:
         row["pull_request"] = {"url": "x"}
