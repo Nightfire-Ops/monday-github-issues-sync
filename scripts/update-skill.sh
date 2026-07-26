@@ -5,8 +5,9 @@
 #   ./scripts/update-skill.sh --check    # report whether an update exists
 #   ./scripts/update-skill.sh --version 1.2.0
 #
-# Requires: gh, authenticated with read access to the upstream repo. Your
-# .monday-sync/ state is never touched.
+# The upstream is public, so no auth and no gh are required — plain curl+git is
+# enough. gh is used only as a fallback (private forks). Your .monday-sync/
+# state is never touched.
 
 set -euo pipefail
 UPSTREAM="${MONDAY_SYNC_UPSTREAM:-Nightfire-Ops/monday-github-issues-sync}"
@@ -45,14 +46,19 @@ give_up() {                       # $1 = reason token, $2 = human message
   exit 1
 }
 
-command -v gh >/dev/null \
-  || give_up gh-not-found "gh CLI not found"
-gh auth status >/dev/null 2>&1 \
-  || give_up gh-not-authenticated "gh not authenticated — run: gh auth login"
-
-latest="$(gh api "repos/$UPSTREAM/releases/latest" --jq '.tag_name' 2>/dev/null | sed 's/^v//' || true)"
-if [[ -z "$latest" ]]; then
-  latest="$(gh api "repos/$UPSTREAM/contents/VERSION" --jq '.content' 2>/dev/null | base64 -d | tr -d '[:space:]' || true)"
+# Resolve the upstream version. Anonymous HTTPS first — the upstream is public,
+# so requiring gh or a login would be a needless barrier. gh is tried only if
+# the anonymous path yields nothing, which is the private-fork case.
+latest=""
+if command -v curl >/dev/null; then
+  latest="$(curl -fsSL "https://api.github.com/repos/$UPSTREAM/releases/latest" 2>/dev/null \
+            | sed -n 's/.*"tag_name": *"v\{0,1\}\([^"]*\)".*/\1/p' | head -1)"
+  [[ -n "$latest" ]] || latest="$(curl -fsSL \
+    "https://raw.githubusercontent.com/$UPSTREAM/main/VERSION" 2>/dev/null | tr -d '[:space:]')"
+fi
+if [[ -z "$latest" ]] && command -v gh >/dev/null && gh auth status >/dev/null 2>&1; then
+  latest="$(gh api "repos/$UPSTREAM/releases/latest" --jq '.tag_name' 2>/dev/null | sed 's/^v//' || true)"
+  [[ -n "$latest" ]] || latest="$(gh api "repos/$UPSTREAM/contents/VERSION" --jq '.content' 2>/dev/null | base64 -d | tr -d '[:space:]' || true)"
 fi
 # Validate the SHAPE, not just non-emptiness. `gh api` prints its error body to
 # stdout on failure, so a 404 yields a JSON blob here rather than an empty
@@ -85,12 +91,15 @@ fi
 
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 echo "fetching $target …"
-gh repo clone "$UPSTREAM" "$tmp/src" -- --depth 1 --quiet \
-  ${want:+--branch "v$target"} 2>/dev/null \
-  || gh repo clone "$UPSTREAM" "$tmp/src" -- --depth 1 --quiet
+git clone --depth 1 --quiet ${want:+--branch "v$target"} \
+  "https://github.com/$UPSTREAM.git" "$tmp/src" 2>/dev/null \
+  || git clone --depth 1 --quiet "https://github.com/$UPSTREAM.git" "$tmp/src" 2>/dev/null \
+  || { command -v gh >/dev/null && gh repo clone "$UPSTREAM" "$tmp/src" -- --depth 1 --quiet; } \
+  || { echo "could not fetch $UPSTREAM" >&2; exit 1; }
 
 # Replace skill surface only. .monday-sync/ is the user's data and is preserved.
-for path in SKILL.md README.md VERSION references scripts packaging; do
+for path in SKILL.md README.md CLAUDE.md INSTALL.md VERSION \
+            references scripts packaging; do
   [[ -e "$tmp/src/$path" ]] || continue
   rm -rf "${HERE:?}/$path"
   cp -r "$tmp/src/$path" "$HERE/$path"

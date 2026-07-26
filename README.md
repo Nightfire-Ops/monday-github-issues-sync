@@ -46,30 +46,35 @@ half-populating a board.
 
 ## Install
 
-The skill ships as a directory. Copy it into your skills folder — the directory
-name *is* the slash command, so it must stay `monday-github-issues-sync`:
+**One command:**
 
 ```bash
-# personal — available in every project
-cp -r monday-github-issues-sync ~/.claude/skills/
-
-# or project-scoped — keeps sync state beside the code it describes
-mkdir -p .claude/skills && cp -r monday-github-issues-sync .claude/skills/
+git clone https://github.com/Nightfire-Ops/monday-github-issues-sync \
+  ~/.claude/skills/monday-github-issues-sync
 ```
 
-From a release archive:
+That's it — restart Claude Code and run `/monday-github-issues-sync`. No
+authentication, no `gh`, no download step. The directory name *is* the slash
+command, so keep it as-is.
+
+**Project-scoped instead** (keeps sync state beside the code it describes):
 
 ```bash
-unzip monday-github-issues-sync-*.zip
-cp -r monday-github-issues-sync ~/.claude/skills/
+git clone https://github.com/Nightfire-Ops/monday-github-issues-sync \
+  .claude/skills/monday-github-issues-sync
 ```
 
-Hand the directory (or the zip) to Claude Code and ask it to install the skill —
-[CLAUDE.md](CLAUDE.md) inside it tells Claude where to put it, what to verify,
-and what not to touch.
+**Or let Claude do it** — paste this into Claude Code:
 
-See [INSTALL.md](INSTALL.md) for requirements, monday MCP setup, and
-configuration.
+```
+Install the Claude Code skill at
+https://github.com/Nightfire-Ops/monday-github-issues-sync
+```
+
+Claude reads [CLAUDE.md](CLAUDE.md) in the repo, which tells it where to install,
+what to verify, and what not to touch.
+
+See [INSTALL.md](INSTALL.md) for requirements and configuration.
 
 ## Use
 
@@ -120,10 +125,9 @@ with a reason — so "cannot reach the upstream" is handled the same as "nothing
 to do" without special-casing exit codes. Applying an update still exits
 non-zero on real failure.
 
-Updates come from the authenticated upstream configured in
-`scripts/update-skill.sh` — the single place the source repository is named.
-Access is whatever your `gh` credentials allow; there is no anonymous path and
-no URL to distribute. Override for a fork with `MONDAY_SYNC_UPSTREAM=owner/repo`.
+Updates come from this repository over plain HTTPS — no auth and no `gh`
+needed. Override for a fork with `MONDAY_SYNC_UPSTREAM=owner/repo`; private
+forks fall back to `gh` automatically if it is installed and authenticated.
 
 The updater replaces the skill surface only. Your `.monday-sync/` state — the
 item mapping that prevents duplicates — is never touched.

@@ -1,9 +1,11 @@
 # Installing this skill
 
-You are reading this because someone handed you this skill directory (or an
-archive of it) and asked you to install it. This file tells you how. Follow it
-directly — do not ask the user to run the steps themselves unless something
-fails.
+You are reading this because someone gave you this repository's URL, or handed
+you the directory, and asked you to install the skill. This file tells you how.
+Follow it directly — do not ask the user to run the steps themselves unless
+something fails.
+
+The repository is public: `git clone` works with no authentication.
 
 **What this is:** `monday-github-issues-sync`, a Claude Code skill that mirrors
 a GitHub repository's issues and pull requests into a monday.com board.
@@ -33,20 +35,25 @@ authenticate on their behalf; it needs an interactive browser login.
    - **Project** → `<repo>/.claude/skills/`, available in one repository and
      keeps the sync state file next to the code it describes
 
-2. **Copy this directory in.** The directory name *is* the slash command, so it
-   must stay exactly `monday-github-issues-sync`:
+2. **Install it.** The directory name *is* the slash command, so it must stay
+   exactly `monday-github-issues-sync`:
 
    ```bash
    DEST="$HOME/.claude/skills"          # or <repo>/.claude/skills
    mkdir -p "$DEST"
    rm -rf "$DEST/monday-github-issues-sync"
-   cp -r . "$DEST/monday-github-issues-sync"
+   git clone --quiet https://github.com/Nightfire-Ops/monday-github-issues-sync \
+     "$DEST/monday-github-issues-sync"
+   ```
+
+   If you already have the directory locally, `cp -r . "$DEST/monday-github-issues-sync"`
+   from inside it instead. Then make the scripts executable:
+
+   ```bash
    chmod +x "$DEST/monday-github-issues-sync/scripts/"*.sh \
             "$DEST/monday-github-issues-sync/scripts/"*.py \
             "$DEST/monday-github-issues-sync/packaging/"*.sh
    ```
-
-   Run it from inside this directory. If you were given a zip, unzip first.
 
 3. **Check prerequisites** and report any that are missing:
 
@@ -70,9 +77,8 @@ To drive it manually:
 ~/.claude/skills/monday-github-issues-sync/scripts/update-skill.sh
 ```
 
-The upstream is configured inside `scripts/update-skill.sh` and reached with the
-user's own `gh` credentials. Do not copy that value anywhere else, and do not
-put it in documentation.
+The upstream is configured inside `scripts/update-skill.sh` and reached over
+plain HTTPS — no auth required.
 
 The updater replaces the skill surface only and never touches `.monday-sync/`,
 which holds the item mapping that prevents duplicate board rows.

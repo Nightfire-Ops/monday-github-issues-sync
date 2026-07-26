@@ -36,7 +36,8 @@ Drop this folder into your skills directory.
 **Personal** — available in every project:
 
 ```bash
-cp -r monday-github-issues-sync ~/.claude/skills/
+git clone https://github.com/Nightfire-Ops/monday-github-issues-sync \
+  ~/.claude/skills/monday-github-issues-sync
 ```
 
 **Project** — available in one repository, and puts the sync state file next to
@@ -154,10 +155,9 @@ The updater replaces the skill surface only — `SKILL.md`, `references/`,
 `.monday-sync/` state, which holds the item mapping that prevents duplicate
 board rows, is never touched.
 
-Updates come from the authenticated upstream configured inside
-`scripts/update-skill.sh` — the only place the source repository is named, and
-reached with your own `gh` credentials. Point it at a fork with
-`MONDAY_SYNC_UPSTREAM=owner/repo`.
+Updates come over plain HTTPS from the upstream configured inside
+`scripts/update-skill.sh` — no auth or `gh` needed. Point it at a fork with
+`MONDAY_SYNC_UPSTREAM=owner/repo`; private forks fall back to `gh`.
 
 ## 8. Recurring sync
 
