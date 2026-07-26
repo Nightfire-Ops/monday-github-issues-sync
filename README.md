@@ -18,6 +18,32 @@ management can see what development is actually doing without living in GitHub.
 Full history on the first run, incremental after that. Every run reconciles
 against the board before writing, so **re-running never duplicates**.
 
+## Before you install: the monday MCP server
+
+This skill talks to monday.com through the **monday MCP server**. Without it
+the skill cannot read or write a board at all, so set it up *before* installing
+the skill.
+
+Check whether it is already connected — in Claude Code, run:
+
+```
+/mcp
+```
+
+If no monday server is listed, add it:
+
+```bash
+claude mcp add monday --transport http https://mcp.monday.com/mcp
+```
+
+Then run `/mcp` again and authenticate in the browser. **Sign in as an account
+with write access to the board you intend to sync into** — a viewer account
+authenticates fine and then fails on the first write.
+
+The skill re-checks this itself at Step 1 of every run and stops with setup
+instructions if the server is missing, so a bad install fails fast rather than
+half-populating a board.
+
 ## Install
 
 The skill ships as a directory. Copy it into your skills folder — the directory
@@ -53,14 +79,27 @@ In Claude Code:
 /monday-github-issues-sync
 ```
 
-The skill is invoked as a slash command matching its directory name. It will
-ask for two things:
+The skill is invoked as a slash command matching its directory name. What
+happens, in order:
 
-1. **GitHub repository** — `https://github.com/OWNER/REPO` or `OWNER/REPO`
-2. **monday board** — a board URL, a numeric board id, or a board name
+1. **Update check** — reports whether a newer version exists and asks whether
+   to update before running. Declining is fine; a failed check never blocks.
+2. **monday MCP check** — confirms the server is connected and authenticated.
+   If not, it stops and tells you how to add it.
+3. **Asks for the GitHub repository** — a URL
+   (`https://github.com/OWNER/REPO`) or `OWNER/REPO`. This is the repo whose
+   issues and pull requests get mirrored. Read-only; nothing is ever written
+   back to GitHub.
+4. **Asks for the monday board** — a board URL
+   (`https://<account>.monday.com/boards/1234567890`), a board id, or a board
+   name. **A new, empty board is recommended** — the skill adds 14 columns and
+   2 groups, which is intrusive on a busy existing board and easy to confuse
+   with hand-managed work. It will offer to create one for you.
+5. **Reports the scale** — how many issues and PRs it found, open and closed.
+6. **Shows a plan and waits for your confirmation** before the first write.
 
-Then it verifies access, reports how many issues and PRs it found, provisions
-the board, shows a plan, and waits for confirmation before writing anything.
+Syncing into an existing board works too: reconciliation ignores any row
+without a `GitHub URL`, so hand-created items are never touched.
 
 You can also invoke it in plain language — "sync github issues to monday",
 "mirror our repo into the board" — which matches the skill's triggers.
@@ -115,6 +154,22 @@ hardcoded anywhere — all are runtime inputs. Enforced by:
 
 Six checks covering emails, account subdomains, real ids, generated column ids,
 concrete repo slugs, and attribution logic. Run before sharing a fork.
+
+## Deletion and recovery
+
+**This skill never deletes, archives, or clears anything without asking.** It
+creates items, updates the columns it owns, and appends to Updates feeds.
+Duplicates, stale rows, and monday's default placeholder items are all
+*reported* — removal is always proposed and waits for an explicit yes. Rows
+without a `GitHub URL` are ignored entirely; columns it does not own are never
+written to; human comments in a feed are never removed.
+
+**If you believe something was deleted:** contact your monday.com administrator
+before assuming the data is gone. Deleted items go to monday's recycle bin
+rather than vanishing — admins can see what was removed and restore it on
+request. Do not re-run the sync to "rebuild" the item first: a restored item
+keeps its full history and human comments, while a re-synced one does not, and
+re-creating it makes the restore land as a duplicate.
 
 ## Known limits
 

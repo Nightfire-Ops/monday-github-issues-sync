@@ -1,6 +1,6 @@
 ---
 name: monday-github-issues-sync
-version: 1.2.1
+version: 1.3.0
 description: One-way sync of a GitHub repository's issues and pull requests into a monday.com board, preserving GitHub timestamps, so project management can see everything happening in development. Prompts for the repo URL and target board, backfills full history on first run, then syncs incrementally.
 allowed-tools:
   - AskUserQuestion
@@ -48,7 +48,7 @@ is preserved; only the columns this skill owns get overwritten.
    posted oldest-first so the feed reads chronologically.
 2. **Volume is the main risk.** A repo with 400 issues and 20 events each is
    8,000 writes. The skill caps work per run and resumes from state — see
-   *Step 6*. Never launch an uncapped backfill on a large repo without saying
+   *Step 7*. Never launch an uncapped backfill on a large repo without saying
    what it will cost.
 3. **Writing to a shared board is outward-facing.** Always show the plan and
    get confirmation before the first write of a run, unless the user has
@@ -99,7 +99,39 @@ not stall on a prompt, and must not silently swap its own logic mid-flight.
 Never update without asking. The user may be mid-task on a board where
 behaviour changes matter.
 
-## Step 1 — Collect inputs
+## Step 1 — Verify the monday MCP server
+
+**Before asking the user for anything.** There is no point collecting a repo
+and a board if the writes cannot happen — and finding out halfway through a
+backfill leaves a half-populated board.
+
+Call `mcp__monday__get_user_context`. It is read-only, needs no arguments, and
+returns the authenticated user and account.
+
+- **Returns a user** → the server is connected and authenticated. Keep the
+  numeric user id; Step 2 needs it for assignment.
+- **Tool is not available** (no `mcp__monday__*` tools in this session) → the
+  server is not installed. Stop and tell the user:
+
+  > This skill needs the monday.com MCP server, which isn't connected. Install
+  > it with:
+  >
+  > ```
+  > claude mcp add monday --transport http https://mcp.monday.com/mcp
+  > ```
+  >
+  > Then run `/mcp` to authenticate in the browser, restart the session, and
+  > invoke this skill again.
+
+  Do not attempt to install or authenticate it yourself — it needs an
+  interactive browser login as the right monday account.
+- **Tool exists but errors** (auth expired, no permission) → report the error
+  verbatim and tell the user to re-run `/mcp`. Do not proceed.
+
+Never fall back to guessing board structure or queuing writes for later. No
+MCP, no run.
+
+## Step 2 — Collect inputs
 
 Ask for both inputs together with `AskUserQuestion` (or accept them if the user
 already supplied them in the prompt):
@@ -111,6 +143,18 @@ already supplied them in the prompt):
   number), a numeric board id, or a board name. For a name, resolve it with
   `mcp__monday__search` (`searchType: "BOARD"`) and if more than one matches,
   list the candidates with their workspace and ask which one.
+
+  **Recommend a new, empty board.** Say so when asking:
+
+  > Which monday board should this sync into? A **new, empty board** is
+  > recommended — this skill adds 14 columns and 2 groups, and on a busy
+  > existing board that structure is intrusive and easy to confuse with
+  > hand-managed work. I can create one for you.
+
+  If they want one, use `mcp__monday__create_board` and confirm the workspace
+  first. Syncing into an existing board is fully supported — reconciliation
+  ignores rows without a `GitHub URL` — but a dedicated board is cleaner and
+  makes the "everything here came from GitHub" guarantee obvious.
 
 Then verify both before doing anything else:
 
@@ -145,7 +189,7 @@ on create is what stops the user having to walk the board afterwards. See
 Report back the scale you are about to sync (open + closed issue count, PR
 count) so the user can narrow scope before committing.
 
-## Step 2 — Load state, then reconcile against the board
+## Step 3 — Load state, then reconcile against the board
 
 State lives at `.monday-sync/<owner>-<repo>--board-<boardId>.json` relative to
 the current working directory. Read `references/state-file.md` for the schema
@@ -172,12 +216,12 @@ scripts/reconcile.py OWNER/REPO \
 ```
 
 It emits the plan as JSON on stdout and the summary on stderr. Use its output
-as Step 5's plan rather than recomputing by hand.
+as Step 6's plan rather than recomputing by hand.
 
 If the file exists but `boardId` inside it disagrees with the resolved board,
 stop and ask — the board was changed or the file was copied.
 
-## Step 3 — Provision the board schema (first run only)
+## Step 4 — Provision the board schema (first run only)
 
 Read `references/board-schema.md` for the full column list, types, and the
 exact `columnValues` payload shape for each.
@@ -221,7 +265,7 @@ exists with an incompatible type (e.g. `Created At` is text, not date), create
 a suffixed column (`Created At (GitHub)`) and note the substitution in the
 run summary rather than mutating the user's board.
 
-## Step 4 — Fetch from GitHub
+## Step 5 — Fetch from GitHub
 
 Read `references/github-queries.md` for the exact commands. The shape:
 
@@ -237,7 +281,7 @@ context. Parse with `jq`. Set the new watermark to the run start time (captured
 *before* fetching), not the finish time, so events landing mid-run are not
 skipped on the next pass.
 
-## Step 5 — Diff and build a plan
+## Step 6 — Diff and build a plan
 
 For each fetched issue/PR, decide against state:
 
@@ -276,7 +320,7 @@ suggest a specific login; read it from the user.
 
 Then confirm before writing.
 
-## Step 6 — Apply writes
+## Step 7 — Apply writes
 
 Order matters. For each item, create/update the item first, then post its feed
 entries oldest-first.
@@ -317,7 +361,7 @@ sorted oldest-first per item. Hand-rolling the conversion reliably re-breaks
 heading and list handling and risks unescaped `<`/`&` from stack traces in
 comment bodies. Post `bodies.json[].html` verbatim.
 
-## Step 7 — Report
+## Step 8 — Report
 
 Summarize:
 
@@ -329,7 +373,42 @@ Summarize:
 
 Then, if this is a first run, offer to set up recurring sync via the `loop` or
 `schedule` skill, and mention that `autoApprove: true` in the state file lets
-unattended runs skip the Step 5 confirmation.
+unattended runs skip the Step 6 confirmation.
+
+## Deletion policy — nothing is removed without asking
+
+This skill **never deletes, archives, or clears anything on its own.** Not
+items, not columns, not groups, not board content it did not create. Every
+destructive action is proposed and waits for an explicit yes.
+
+| Situation | What the skill does |
+|---|---|
+| Duplicate items found | names them, keeps the oldest, **asks** before touching the rest |
+| Item 404s on GitHub (deleted or transferred) | flags it, **leaves the monday item alone** |
+| monday placeholder rows (`Item 1`…`Item 5`) | **offers** to archive them; never archives unasked |
+| Existing column with a conflicting type | creates a suffixed column instead of retyping |
+| Rows with no `GitHub URL` | untouched — that is somebody else's work |
+| Human comments in an item's Updates feed | never removed; the skill only appends |
+
+A monday item can carry human discussion this skill did not write, so removing
+one destroys work that exists nowhere else. Report and let a person decide.
+
+### If a user reports that something was deleted
+
+Take it seriously and be straightforward:
+
+1. **Point them at their monday.com admin.** Deleted items go to monday's
+   recycle bin rather than disappearing. Admins can see what was removed and
+   restore it on request — this is recoverable, and they should ask rather than
+   assume the data is gone.
+2. **Do not attempt to re-create the item from GitHub as a "fix."** A restored
+   item keeps its history and human comments; a re-synced one does not, and
+   re-creating it first makes the restore land as a duplicate.
+3. **Check the state file and the run summary** to establish what this skill
+   actually wrote. Every run reports items created, updated, and skipped, and
+   the skill has no code path that deletes.
+4. If a deletion genuinely came from a run, that is a bug worth reporting —
+   capture the state file and the summary.
 
 ## Failure handling
 
