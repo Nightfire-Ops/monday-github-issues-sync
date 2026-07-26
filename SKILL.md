@@ -1,6 +1,6 @@
 ---
 name: monday-github-issues-sync
-version: 1.3.0
+version: 1.3.1
 description: One-way sync of a GitHub repository's issues and pull requests into a monday.com board, preserving GitHub timestamps, so project management can see everything happening in development. Prompts for the repo URL and target board, backfills full history on first run, then syncs incrementally.
 allowed-tools:
   - AskUserQuestion
@@ -9,6 +9,8 @@ allowed-tools:
   - Write
   - Edit
   - Glob
+  - mcp__monday__get_user_context
+  - mcp__monday__create_board
   - mcp__monday__get_board_info
   - mcp__monday__get_board_items_page
   - mcp__monday__get_column_type_info
