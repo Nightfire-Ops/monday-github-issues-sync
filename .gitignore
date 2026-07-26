@@ -7,3 +7,6 @@ dist/
 scripts/__pycache__/
 tests/__pycache__/
 .pytest_cache/
+
+# Coverage artifact from the throwaway venv — embeds absolute paths
+.coverage

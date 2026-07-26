@@ -136,15 +136,6 @@ Established empirically; documented in `references/board-schema.md` and
   bump, SKILL.md frontmatter stamp, `dist/` rebuild, versioned + latest zips,
   tag, push, GitHub release. Blocks on test or lint failure.
 
-## Known wart
-
-`.coverage` is **committed and not gitignored**. It is a throwaway artifact from
-the coverage venv, and being a SQLite file it embeds absolute paths — the
-author's home directory and username are inside it, in a public repo. The
-portability lint does not catch it because it only scans `.md`/`.py`/`.json`.
-Fix is `git rm --cached .coverage` plus a `.gitignore` line; left alone here
-because removing a tracked file was outside the change that found it.
-
 ## Process lessons — these cost real time
 
 - **`str.replace` in a patch script silently does nothing when the pattern does
@@ -178,7 +169,6 @@ because removing a tracked file was outside the change that found it.
   output through `reconcile.py`, on-board excluded rows frozen and named, no
   deletions, `[bot]`-suffix matching confirmed against live GitHub data. Only
   the *plan* path — no writes were applied, and the resolver postdates that.
-- **Still open: `.coverage` is tracked** — see *Known wart*.
 - `syncCommits` and `syncLabelEvents` are off by default and unexercised.
 - No integration test touches the monday MCP; everything MCP-side was validated
   by hand. A fake-MCP harness would close that gap if the skill grows.
