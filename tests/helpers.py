@@ -68,6 +68,7 @@ def gh_issue(number, pr=False, updated="2026-07-01T00:00:00Z", **kw):
     `author=None` to model a row whose author GitHub omitted (deleted account).
     """
     author = kw.pop("author", "someone")
+    merged = kw.pop("merged", None)
     row = {
         "number": number,
         "created_at": kw.pop("created", "2026-07-01T00:00:00Z"),
@@ -76,7 +77,11 @@ def gh_issue(number, pr=False, updated="2026-07-01T00:00:00Z", **kw):
         "user": {"login": author} if author is not None else None,
     }
     if pr:
+        # merged_at rides inside `pull_request` on the issues endpoint — the
+        # top-level `merged_at` only exists on the pulls endpoint.
         row["pull_request"] = {"url": "x"}
+        if merged is not None:
+            row["pull_request"]["merged_at"] = merged
     row.update(kw)
     return row
 

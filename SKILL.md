@@ -406,6 +406,27 @@ sorted oldest-first per item. Hand-rolling the conversion reliably re-breaks
 heading and list handling and risks unescaped `<`/`&` from stack traces in
 comment bodies. Post `bodies.json[].html` verbatim.
 
+**`events.json` must include closes and merges, not just comments.** These are
+the entries a PM is most likely to be looking for, and every field needed is
+already in `issues.json` — no extra API call:
+
+```bash
+jq '[.[] | select(.closed_at) | {
+      kind:   (if .pull_request.merged_at then "merged" else "closed" end),
+      number: .number,
+      at:     (.pull_request.merged_at // .closed_at),
+      author: .closed_by.login,
+      url:    .html_url,
+      body:   null
+    }]' issues.json
+```
+
+`closed_by` is the merger on a merged PR. Emit **merged or closed, never both**:
+GitHub closes a PR when it merges it, so both fields carry the same instant and
+posting both duplicates that moment. `reconcile.py`'s `state_events()` applies
+exactly this rule when it counts `newEvents`, so a plan that says 1 entry and an
+`events.json` that yields 2 means the two have drifted.
+
 ## Step 8 — Report
 
 Summarize:

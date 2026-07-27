@@ -82,6 +82,30 @@ def item_key(src):
     return ("pr/" if src.get("pull_request") else "issue/") + str(src["number"])
 
 
+def state_events(src):
+    """Event keys for an item's terminal state transition.
+
+    Both timestamps ride on the issues endpoint already in hand — `closed_at`,
+    and `merged_at` nested inside `pull_request` for a PR — so closes and
+    merges reach the feed without a single extra API call.
+
+    Merged supersedes closed: GitHub closes a PR when it merges it, setting
+    both fields to the same instant, and emitting both would post that moment
+    twice. Reopening needs no case of its own — a reopened item comes back with
+    `closed_at: null`, so nothing is emitted and the existing entry is not
+    duplicated; closing it again yields a new key at the new timestamp.
+
+    Keys must stay identical to `render-entries.py`'s `event_key()`, which
+    stamps what actually gets posted. If the two drift, every run reposts the
+    same entry forever.
+    """
+    if merged_at := (src.get("pull_request") or {}).get("merged_at"):
+        return [f"state:merged@{merged_at}"]
+    if closed_at := src.get("closed_at"):
+        return [f"state:closed@{closed_at}"]
+    return []
+
+
 def load(path):
     if not path:
         return None
@@ -181,7 +205,8 @@ def main():
         if key in excluded_keys:
             continue
         st = item_map.get(key, {})
-        gh_keys = [f"opened@{src['created_at']}"] + events.get(num, [])
+        gh_keys = ([f"opened@{src['created_at']}"] + events.get(num, [])
+                   + state_events(src))
         synced = set(st.get("syncedEvents", []))
         new_events = [k for k in gh_keys if k not in synced]
 

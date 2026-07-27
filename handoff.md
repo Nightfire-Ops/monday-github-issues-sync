@@ -1,8 +1,12 @@
 # Handoff — monday-github-issues-sync
 
-**Last updated:** 2026-07-26
+**Last updated:** 2026-07-27
 **Status:** Built, published, tested, and validated against a live board.
 No known open defects.
+
+**1.8.1** fixed the one defect found since: closes and merges never reached the
+Updates feed. See *Hard-won facts* #8 — it is the most instructive bug in the
+project's history, because every individual piece was correct and tested.
 
 This is a development handoff: the context a fresh contributor (human or agent)
 needs that the code and docs do not already carry. It is deliberately not a
@@ -25,11 +29,12 @@ without living in GitHub.
 
 | Item | State |
 |---|---|
-| Skill + docs + scripts | complete, v1.8.0, 9 portability checks passing |
-| Test suite | 110 tests, three scripts, gates releases |
+| Skill + docs + scripts | complete, v1.8.1, 9 portability checks passing |
+| Test suite | 120 tests, three scripts, gates releases |
 | `options.excludeAuthors` | v1.7.0; plan path live-validated on a throwaway board |
-| Author resolution + no assignment | v1.8.0; resolver not yet run against a board |
-| Live backfill | complete: 26 items, 50 feed entries, all assigned |
+| Author resolution + no assignment | v1.8.0; full chain live-validated 2026-07-27 |
+| Close / merge feed entries | v1.8.1; 14 missing entries backfilled to the live board |
+| Live backfill | complete: 27 items, 65 feed entries |
 | Doubled-link repair (17 entries) | done, verified by reading bodies back |
 | Test board placeholders / 2nd board | deleted |
 
@@ -81,6 +86,10 @@ Established empirically; documented in `references/board-schema.md` and
    test repo 6 vs 18.
 7. **`edit_update(id, body)` and `delete_update(id)` exist** — used to repair
    posted entries in place without deleting anything.
+8. **The issues endpoint alone carries everything a close/merge entry needs**:
+   `closed_at`, `closed_by` (the *merger* on a merged PR), and `merged_at`
+   nested inside `pull_request`. No `pulls/N` call, no timeline walk. This is
+   why the 1.8.1 fix costs zero extra requests.
 
 ## Environment / permission gotchas
 
@@ -154,6 +163,23 @@ Established empirically; documented in `references/board-schema.md` and
   single-footer-link assertion matched exact label text; a reworded duplicate
   passed. Rewritten to a wording-independent invariant (an entry links to its own
   URL exactly once).
+- **Two correct, well-tested modules can still be broken at the seam.** The
+  1.8.1 defect: `reconcile.py` built event keys from `opened@` + comments only,
+  while `render-entries.py` had rendered `state:closed@` / `state:merged@` all
+  along, and `state-file.md` documented the keys. Every unit was right; nothing
+  connected them, so closing an issue quietly updated its columns and posted
+  nothing. It survived a 110-test suite because `grep state:closed` hit exactly
+  one file — the renderer's own tests. Found only by reading a live plan and
+  asking why a PR that had just been merged reported `newEvents: 0`. **When two
+  modules must agree on a value, assert the agreement in a test** — the fix adds
+  `test_regression_state_event_key_matches_what_the_renderer_emits`, which
+  compares the two implementations directly rather than each against a literal.
+  Worth auditing the other shared vocabulary the same way (`comment:`,
+  `review:`, `rcomment:`), which nothing currently cross-checks.
+- **A silent omission looks exactly like "nothing happened."** Nobody noticed
+  for three days because a board with correct State columns and no closure entry
+  is indistinguishable from a board that is simply up to date. Bugs that *add*
+  something wrong get reported; bugs that *skip* something do not.
 - **Cost shape:** building and testing dominated; a real sync is ~90 API
   calls. Feed-entry work is the expensive part because each ~1.4 KB body
   round-trips through the model's context twice.
@@ -164,11 +190,12 @@ Established empirically; documented in `references/board-schema.md` and
   session — reasoned but untested.
 - Recurring sync via the `schedule` skill (`options.autoApprove: true` skips the
   plan confirmation and the Step 0 update check).
-- **Exercise the 1.8.0 author resolver against a board.** `excludeAuthors` was
-  validated on a throwaway board (2026-07-26): real `get_board_items_page`
-  output through `reconcile.py`, on-board excluded rows frozen and named, no
-  deletions, `[bot]`-suffix matching confirmed against live GitHub data. Only
-  the *plan* path — no writes were applied, and the resolver postdates that.
+- **`syncLabelEvents` would close the last gap in the feed.** 1.8.1 covers
+  close and merge, which are derivable from the issues endpoint. `reopened` is
+  deliberately *not* emitted: a reopened item returns `closed_at: null` and the
+  endpoint carries no timestamp for the transition, so there is nothing to key
+  on without the per-item timeline. `state_events()` in `reconcile.py` is where
+  that would go.
 - `syncCommits` and `syncLabelEvents` are off by default and unexercised.
 - No integration test touches the monday MCP; everything MCP-side was validated
   by hand. A fake-MCP harness would close that gap if the skill grows.

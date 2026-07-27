@@ -52,6 +52,14 @@ GLYPH = {
 }
 
 
+# Event kinds that never carry a body of their own. Anything not listed here is
+# expected to have one, so its absence is worth stating rather than hiding.
+BODILESS = frozenset({
+    "merged", "closed", "reopened", "labeled", "unlabeled",
+    "assigned", "unassigned", "renamed", "cross_referenced",
+})
+
+
 class UnresolvedAuthor(Exception):
     """A bot identity reached the renderer with no human to attribute it to."""
 
@@ -217,8 +225,14 @@ def render(ev, repo, automation_author=None):
             f'<i>Synced from <a href="{ev["url"]}">{repo}#{ev["number"]}</a></i>'
             "<br/><br/>"
         )
-    text, was_truncated = truncate(md_to_html(ev.get("body"), repo))
-    parts.append(text)
+    # State changes carry no body, so the "(no description)" placeholder would
+    # report an absence that was never possible. An *opened* item with an empty
+    # description is the opposite case — that emptiness is real, and shown.
+    if ev.get("body") or ev["kind"] not in BODILESS:
+        text, was_truncated = truncate(md_to_html(ev.get("body"), repo))
+        parts.append(text)
+    else:
+        was_truncated = False
 
     # Exactly ONE footer link per entry. When the body was cut, the link carries
     # that fact instead of adding a second link beside it.

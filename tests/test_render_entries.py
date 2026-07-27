@@ -127,6 +127,17 @@ class TestMarkdownConversion(unittest.TestCase):
         self.assertIn("(no description)", render.md_to_html("", REPO))
         self.assertIn("(no description)", render.md_to_html(None, REPO))
 
+    def test_state_change_entries_carry_no_missing_body_placeholder(self):
+        # A close or a merge has no body by nature, so "(no description)"
+        # reports an absence that was never possible and reads as data loss.
+        # An *opened* item with an empty description is the opposite case: the
+        # emptiness is real and worth showing, so that placeholder stays.
+        for kind in ("closed", "merged", "reopened"):
+            with self.subTest(kind=kind):
+                out = html_for(kind=kind, body=None)
+                self.assertNotIn("(no description)", out)
+        self.assertIn("(no description)", html_for(kind="opened", body=None))
+
     def test_regression_escapes_html_in_comment_text(self):
         # Issue comments routinely contain stack traces and generics. Unescaped,
         # they break the update body or vanish.

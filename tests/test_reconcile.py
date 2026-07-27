@@ -10,7 +10,7 @@ Run: python3 -m unittest discover -s tests   (or pytest tests/)
 import json
 import unittest
 
-from helpers import board, gh_issue, reconcile, url_for
+from helpers import board, gh_issue, reconcile, render, url_for
 
 REPO = "OWNER/REPO"
 
@@ -273,6 +273,132 @@ class TestDiff(PlanCase):
         for forbidden in ("delete", "archive", "remove"):
             self.assertNotIn(forbidden, json.dumps(plan).lower())
         self.assertEqual(plan["unmanagedItems"], 1)
+
+
+class TestStateChangeEvents(PlanCase):
+    """Closing and merging must reach the Updates feed.
+
+    Reached a live board: `reconcile.py` built event keys from `opened@` plus
+    comments only, while `render-entries.py` had rendered `state:closed@` /
+    `state:merged@` all along. Both halves were individually correct and
+    individually tested, so nothing failed — a merged PR and a closed issue
+    silently updated their columns and posted nothing. Verified against the
+    live state file: no `state:` key existed anywhere across 27 items.
+
+    Both timestamps come off the issues endpoint already in hand — `closed_at`,
+    and `pull_request.merged_at` for a PR — so this costs no extra API call.
+    """
+
+    def opened_only(self, key, monday_id, created="2026-07-01T00:00:00Z"):
+        return self.synced_state(key, monday_id, created, [f"opened@{created}"])
+
+    def test_regression_closing_an_issue_posts_a_feed_entry(self):
+        plan = self.plan(
+            [(111, "#1 a", url_for(1))],
+            [gh_issue(1, state="closed", closed_at="2026-07-20T09:15:00Z",
+                      updated="2026-07-20T09:15:00Z")],
+            self.opened_only("issue/1", 111),
+        )
+        self.assertEqual(plan["skip"], [])
+        self.assertEqual(plan["update"][0]["newEvents"], 1)
+
+    def test_regression_merging_a_pr_posts_a_feed_entry(self):
+        plan = self.plan(
+            [(111, "#1 a", url_for(1, pr=True))],
+            [gh_issue(1, pr=True, state="closed",
+                      merged="2026-07-22T11:02:00Z",
+                      closed_at="2026-07-22T11:02:00Z",
+                      updated="2026-07-22T11:02:00Z")],
+            self.opened_only("pr/1", 111),
+        )
+        self.assertEqual(plan["skip"], [])
+        self.assertEqual(plan["update"][0]["newEvents"], 1)
+
+    def test_regression_merged_pr_does_not_also_post_a_closed_entry(self):
+        # GitHub closes a PR when it merges it, so closed_at and merged_at are
+        # both set and identical. Emitting both posts the same moment twice.
+        plan = self.plan(
+            [(111, "#1 a", url_for(1, pr=True))],
+            [gh_issue(1, pr=True, state="closed",
+                      merged="2026-07-22T11:02:00Z",
+                      closed_at="2026-07-22T11:02:00Z",
+                      updated="2026-07-22T11:02:00Z")],
+            self.opened_only("pr/1", 111),
+        )
+        self.assertEqual(plan["update"][0]["newEvents"], 1)
+
+    def test_regression_state_event_key_matches_what_the_renderer_emits(self):
+        # The invariant that would have caught this: reconcile decides an event
+        # is new by key, the renderer stamps the key it posts. If the two ever
+        # disagree, every run reposts the same entry forever.
+        for kind, at in (("closed", "2026-07-20T09:15:00Z"),
+                         ("merged", "2026-07-22T11:02:00Z")):
+            with self.subTest(kind=kind):
+                self.assertEqual(
+                    render.event_key({"kind": kind, "at": at}),
+                    f"state:{kind}@{at}",
+                )
+        src = gh_issue(1, pr=True, state="closed",
+                       merged="2026-07-22T11:02:00Z",
+                       closed_at="2026-07-22T11:02:00Z")
+        self.assertEqual(
+            reconcile.state_events(src),
+            [render.event_key({"kind": "merged", "at": "2026-07-22T11:02:00Z"})],
+        )
+
+    def test_already_synced_close_is_not_reposted(self):
+        state = self.synced_state(
+            "issue/1", 111, "2026-07-20T09:15:00Z",
+            ["opened@2026-07-01T00:00:00Z", "state:closed@2026-07-20T09:15:00Z"],
+        )
+        plan = self.plan(
+            [(111, "#1 a", url_for(1))],
+            [gh_issue(1, state="closed", closed_at="2026-07-20T09:15:00Z",
+                      updated="2026-07-20T09:15:00Z")],
+            state,
+        )
+        self.assertEqual(plan["skip"], ["issue/1"])
+
+    def test_open_item_produces_no_state_event(self):
+        self.assertEqual(reconcile.state_events(gh_issue(1)), [])
+        self.assertEqual(reconcile.state_events(gh_issue(1, pr=True)), [])
+
+    def test_reopened_item_posts_nothing_and_reposts_nothing(self):
+        # A reopened item comes back with closed_at: null. Nothing is emitted,
+        # so the old state:closed@ entry is not duplicated — and no reopen key
+        # is invented, because the issues endpoint carries no timestamp for it.
+        state = self.synced_state(
+            "issue/1", 111, "2026-07-01T00:00:00Z",
+            ["opened@2026-07-01T00:00:00Z", "state:closed@2026-07-20T09:15:00Z"],
+        )
+        plan = self.plan(
+            [(111, "#1 a", url_for(1))],
+            [gh_issue(1, state="open", closed_at=None,
+                      updated="2026-07-21T00:00:00Z")],
+            state,
+        )
+        self.assertEqual(plan["update"][0]["newEvents"], 0)
+
+    def test_closing_again_after_a_reopen_posts_the_new_close(self):
+        # Keys carry the timestamp, so a second close is a distinct event.
+        state = self.synced_state(
+            "issue/1", 111, "2026-07-01T00:00:00Z",
+            ["opened@2026-07-01T00:00:00Z", "state:closed@2026-07-20T09:15:00Z"],
+        )
+        plan = self.plan(
+            [(111, "#1 a", url_for(1))],
+            [gh_issue(1, state="closed", closed_at="2026-07-25T12:00:00Z",
+                      updated="2026-07-25T12:00:00Z")],
+            state,
+        )
+        self.assertEqual(plan["update"][0]["newEvents"], 1)
+
+    def test_new_closed_item_counts_its_close_in_the_backfill(self):
+        plan = self.plan(
+            [],
+            [gh_issue(1, state="closed", closed_at="2026-07-20T09:15:00Z")],
+        )
+        self.assertEqual(plan["create"][0]["events"], 2)  # opened + closed
 
 
 class TestExcludeAuthors(PlanCase):
