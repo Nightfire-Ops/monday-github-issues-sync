@@ -28,7 +28,11 @@ REPO = "OWNER/REPO"
 
 
 def event(kind="comment", number=1, body="text", **kw):
-    """Build an event dict with sane defaults, plus its computed key."""
+    """Build an event dict with sane defaults, plus its computed key.
+
+    Id-keyed kinds get a default `id`: their key is derived from the GitHub id,
+    so an event built without one is malformed and the renderer now rejects it.
+    """
     ev = {
         "kind": kind,
         "number": number,
@@ -37,6 +41,8 @@ def event(kind="comment", number=1, body="text", **kw):
         "body": body,
         "url": kw.pop("url", f"https://github.com/{REPO}/issues/{number}"),
     }
+    if kind in render.ID_KEYED:
+        ev["id"] = kw.pop("id", 445566)
     ev.update(kw)
     ev["key"] = render.event_key(ev)
     return ev

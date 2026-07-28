@@ -138,6 +138,28 @@ class TestMarkdownConversion(unittest.TestCase):
                 self.assertNotIn("(no description)", out)
         self.assertIn("(no description)", html_for(kind="opened", body=None))
 
+    def test_regression_id_bearing_event_without_an_id_is_an_error(self):
+        # Silently falling back to state:<kind>@<at> produced a key that looks
+        # valid, matches nothing in syncedEvents, and re-posts an entry that is
+        # already on the board. Failing the run is the only safe answer: the
+        # caller built the event wrong and no key can be recovered from it.
+        for kind in ("comment", "review_approved", "review_changes",
+                     "review_comment", "inline_comment", "commit"):
+            with self.subTest(kind=kind):
+                with self.assertRaises(render.MalformedEvent):
+                    render.event_key({"kind": kind, "at": "2026-07-01T00:00:00Z"})
+
+    def test_state_and_opened_events_still_need_no_id(self):
+        # These are keyed by timestamp by design — GitHub gives them no id.
+        self.assertEqual(
+            render.event_key({"kind": "opened", "at": "2026-07-01T00:00:00Z"}),
+            "opened@2026-07-01T00:00:00Z",
+        )
+        self.assertEqual(
+            render.event_key({"kind": "closed", "at": "2026-07-01T00:00:00Z"}),
+            "state:closed@2026-07-01T00:00:00Z",
+        )
+
     def test_regression_escapes_html_in_comment_text(self):
         # Issue comments routinely contain stack traces and generics. Unescaped,
         # they break the update body or vanish.

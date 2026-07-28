@@ -1,12 +1,18 @@
 # Handoff — monday-github-issues-sync
 
-**Last updated:** 2026-07-27
+**Last updated:** 2026-07-28
 **Status:** Built, published, tested, and validated against a live board.
 No known open defects.
 
 **1.8.1** fixed the one defect found since: closes and merges never reached the
 Updates feed. See *Hard-won facts* #8 — it is the most instructive bug in the
 project's history, because every individual piece was correct and tested.
+
+**1.8.2** closed the same class of hole one layer down: `event_key()` silently
+fell back to `state:<kind>@<at>` for an id-keyed event built without an `id`,
+yielding a plausible key that matches nothing and re-posts entries already on
+the board. It now raises. Caught as a near-miss on a live run — see *Process
+lessons*.
 
 This is a development handoff: the context a fresh contributor (human or agent)
 needs that the code and docs do not already carry. It is deliberately not a
@@ -18,7 +24,7 @@ A Claude Code skill that mirrors a GitHub repo's issues and pull requests into a
 monday.com board (one-way, GitHub → monday), so PM can see development activity
 without living in GitHub.
 
-- **Latest release:** v1.8.0
+- **Latest release:** v1.8.2
 - **Invoked as:** `/monday-github-issues-sync`
 
 **Do not re-read the design from this document.** `SKILL.md` is the entry point;
@@ -29,12 +35,12 @@ without living in GitHub.
 
 | Item | State |
 |---|---|
-| Skill + docs + scripts | complete, v1.8.1, 9 portability checks passing |
-| Test suite | 120 tests, three scripts, gates releases |
+| Skill + docs + scripts | complete, v1.8.2, 9 portability checks passing |
+| Test suite | 123 tests, three scripts, gates releases |
 | `options.excludeAuthors` | v1.7.0; plan path live-validated on a throwaway board |
 | Author resolution + no assignment | v1.8.0; full chain live-validated 2026-07-27 |
 | Close / merge feed entries | v1.8.1; 14 missing entries backfilled to the live board |
-| Live backfill | complete: 27 items, 65 feed entries |
+| Live backfill | complete: 27 items, 80 feed entries |
 | Doubled-link repair (17 entries) | done, verified by reading bodies back |
 | Test board placeholders / 2nd board | deleted |
 
@@ -55,8 +61,9 @@ it is not a project dependency.
 `tests/helpers.py` loads the hyphenated scripts by path, so the tests exercise
 the exact files that ship.
 
-**Tests named `test_regression_*` each encode a bug that reached a live board.**
-All seven were mutation-tested — the fix was reverted and the test confirmed to
+**Tests named `test_regression_*` each encode a bug that reached a live board**
+(or, for the 1.8.2 pair, a near-miss caught mid-run before it wrote).
+All of them were mutation-tested — the fix was reverted and the test confirmed to
 fail. If one of these fails you have reintroduced a real defect; do not relax or
 delete it.
 
@@ -176,6 +183,16 @@ Established empirically; documented in `references/board-schema.md` and
   compares the two implementations directly rather than each against a literal.
   Worth auditing the other shared vocabulary the same way (`comment:`,
   `review:`, `rcomment:`), which nothing currently cross-checks.
+- **The seam bug had a twin one layer down, and it was found by luck.** While
+  applying the 1.8.1 sync, an `events.json` built by hand omitted `id` on the
+  comment events. `event_key()` fell through to `state:comment@<at>`, which
+  matched nothing in `syncedEvents`, so 24 already-posted comments queued for a
+  second posting — 39 entries where reconcile said 15. It was caught *only*
+  because reconcile independently computed a count and the two disagreed.
+  Nothing asserted the agreement. Two fixes in 1.8.2: `event_key()` now raises
+  `MalformedEvent` instead of guessing, and `reconcile.comment_key()` exists so
+  the two derivations can be compared in a test rather than each checked
+  against a literal. **A cross-check you happen to notice is not a test.**
 - **A silent omission looks exactly like "nothing happened."** Nobody noticed
   for three days because a board with correct State columns and no closure entry
   is indistinguishable from a board that is simply up to date. Bugs that *add*

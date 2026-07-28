@@ -359,6 +359,21 @@ class TestStateChangeEvents(PlanCase):
         )
         self.assertEqual(plan["skip"], ["issue/1"])
 
+    def test_regression_comment_key_matches_what_the_renderer_emits(self):
+        # Same seam as the state-event check above, for the other half of the
+        # vocabulary. Caught as a near-miss on a live run: an events.json built
+        # without `id` rendered every comment as state:comment@<at>, which
+        # matched nothing in syncedEvents and queued 24 already-posted comments
+        # for a second posting. Assert the two derivations agree, rather than
+        # each against a literal.
+        comment = {"id": 445566,
+                   "issue_url": f"https://api.github.com/repos/{REPO}/issues/1"}
+        self.assertEqual(
+            reconcile.comment_key(comment),
+            render.event_key({"kind": "comment", "id": comment["id"],
+                              "at": "2026-07-01T00:00:00Z"}),
+        )
+
     def test_open_item_produces_no_state_event(self):
         self.assertEqual(reconcile.state_events(gh_issue(1)), [])
         self.assertEqual(reconcile.state_events(gh_issue(1, pr=True)), [])

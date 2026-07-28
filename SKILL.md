@@ -406,6 +406,19 @@ sorted oldest-first per item. Hand-rolling the conversion reliably re-breaks
 heading and list handling and risks unescaped `<`/`&` from stack traces in
 comment bodies. Post `bodies.json[].html` verbatim.
 
+**Always carry `id` on comment and review events.** Their key comes from the
+GitHub id, never the timestamp. An event built without one used to render as
+`state:comment@<at>` — a key that looks valid, matches nothing in
+`syncedEvents`, and re-posts a comment already on the board. The renderer now
+refuses such an event rather than keying it wrongly, but build it right:
+
+```bash
+jq '[.[] | {kind: "comment", id: .id,
+            number: (.issue_url | split("/") | last | tonumber),
+            at: .created_at, author: .user.login, url: .html_url, body: .body}]' \
+  comments.json
+```
+
 **`events.json` must include closes and merges, not just comments.** These are
 the entries a PM is most likely to be looking for, and every field needed is
 already in `issues.json` — no extra API call:

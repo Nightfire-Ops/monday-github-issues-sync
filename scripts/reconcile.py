@@ -82,6 +82,17 @@ def item_key(src):
     return ("pr/" if src.get("pull_request") else "issue/") + str(src["number"])
 
 
+def comment_key(comment):
+    """Event key for an issue/PR comment.
+
+    Must stay identical to `render-entries.py`'s `event_key()` for the same
+    comment — reconcile decides an entry is new by this key, the renderer
+    stamps the key that actually gets posted, and any drift re-posts entries
+    that are already on the board.
+    """
+    return f"comment:{comment['id']}"
+
+
 def state_events(src):
     """Event keys for an item's terminal state transition.
 
@@ -195,7 +206,7 @@ def main():
     for c in comments:
         n = str(c.get("issue_url", "")).rsplit("/", 1)[-1]
         if n.isdigit():
-            events[n].append(f"comment:{c['id']}")
+            events[n].append(comment_key(c))
 
     # --- Phase 2: diff ---------------------------------------------------
     create, update, skip = [], [], []

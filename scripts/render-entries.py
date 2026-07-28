@@ -64,6 +64,24 @@ class UnresolvedAuthor(Exception):
     """A bot identity reached the renderer with no human to attribute it to."""
 
 
+class MalformedEvent(Exception):
+    """An event cannot be keyed — the caller built it wrong."""
+
+
+# Kinds keyed by a stable GitHub id. Their key is *only* derivable from that id,
+# so an event of one of these kinds arriving without one is an error, never a
+# timestamp fallback: the fallback yields a plausible key that matches nothing
+# in syncedEvents and silently re-posts an entry already on the board.
+ID_KEYED = {
+    "comment": "comment",
+    "review_approved": "review",
+    "review_changes": "review",
+    "review_comment": "review",
+    "inline_comment": "rcomment",
+    "commit": "commit",
+}
+
+
 def display_author(login, automation_author=None):
     """Resolve the display attribution for an event author.
 
@@ -194,14 +212,12 @@ def truncate(body):
 def event_key(ev):
     kind, at = ev["kind"], ev["at"]
     if gid := ev.get("id"):
-        return {
-            "comment": f"comment:{gid}",
-            "review_approved": f"review:{gid}",
-            "review_changes": f"review:{gid}",
-            "review_comment": f"review:{gid}",
-            "inline_comment": f"rcomment:{gid}",
-            "commit": f"commit:{gid}",
-        }.get(kind, f"{kind}:{gid}")
+        return f"{ID_KEYED.get(kind, kind)}:{gid}"
+    if kind in ID_KEYED:
+        raise MalformedEvent(
+            f"{kind} event carries no id — its key comes from the GitHub id, "
+            f"not the timestamp. Include `id` when building the event."
+        )
     if kind == "opened":
         return f"opened@{at}"
     return f"state:{kind}@{at}"
@@ -265,10 +281,10 @@ def main():
     events = json.load(sys.stdin)
 
     for ev in events:
-        ev["key"] = event_key(ev)          # must precede render(); embedded in body
         try:
+            ev["key"] = event_key(ev)      # must precede render(); embedded in body
             ev["html"] = render(ev, repo, automation_author)
-        except UnresolvedAuthor as exc:
+        except (UnresolvedAuthor, MalformedEvent) as exc:
             # Fail the whole run, not this entry. Skipping it would post a
             # partial feed and hide the misconfiguration behind a gap.
             sys.exit(f"render-entries.py: #{ev.get('number')}: {exc}")
