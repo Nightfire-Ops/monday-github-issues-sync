@@ -10,6 +10,13 @@ import sys
 
 SCRIPTS = pathlib.Path(__file__).resolve().parent.parent / "scripts"
 
+# The scripts import their sibling `eventkeys` module. Running one directly puts
+# scripts/ on sys.path automatically; loading it by path here does not, so add
+# it — otherwise every script fails to import under test for a reason that says
+# nothing about the code.
+if str(SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS))
+
 
 def load(filename, name):
     path = SCRIPTS / filename
@@ -19,6 +26,8 @@ def load(filename, name):
     spec.loader.exec_module(module)
     return module
 
+
+import eventkeys  # noqa: E402  (needs SCRIPTS on sys.path, set above)
 
 render = load("render-entries.py", "render_entries")
 reconcile = load("reconcile.py", "reconcile_mod")

@@ -30,6 +30,8 @@ import json
 import re
 import sys
 
+from eventkeys import ID_KEYED, MalformedEvent, key_for  # noqa: F401  (re-exported)
+
 MAX_BODY = 2000
 
 GLYPH = {
@@ -62,24 +64,6 @@ BODILESS = frozenset({
 
 class UnresolvedAuthor(Exception):
     """A bot identity reached the renderer with no human to attribute it to."""
-
-
-class MalformedEvent(Exception):
-    """An event cannot be keyed — the caller built it wrong."""
-
-
-# Kinds keyed by a stable GitHub id. Their key is *only* derivable from that id,
-# so an event of one of these kinds arriving without one is an error, never a
-# timestamp fallback: the fallback yields a plausible key that matches nothing
-# in syncedEvents and silently re-posts an entry already on the board.
-ID_KEYED = {
-    "comment": "comment",
-    "review_approved": "review",
-    "review_changes": "review",
-    "review_comment": "review",
-    "inline_comment": "rcomment",
-    "commit": "commit",
-}
 
 
 def display_author(login, automation_author=None):
@@ -210,17 +194,8 @@ def truncate(body):
 
 
 def event_key(ev):
-    kind, at = ev["kind"], ev["at"]
-    if gid := ev.get("id"):
-        return f"{ID_KEYED.get(kind, kind)}:{gid}"
-    if kind in ID_KEYED:
-        raise MalformedEvent(
-            f"{kind} event carries no id — its key comes from the GitHub id, "
-            f"not the timestamp. Include `id` when building the event."
-        )
-    if kind == "opened":
-        return f"opened@{at}"
-    return f"state:{kind}@{at}"
+    """This event's idempotency key. Vocabulary lives in eventkeys.py."""
+    return key_for(ev["kind"], at=ev.get("at"), gid=ev.get("id"))
 
 
 def render(ev, repo, automation_author=None):

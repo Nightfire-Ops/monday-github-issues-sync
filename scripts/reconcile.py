@@ -26,6 +26,8 @@ import re
 import sys
 from collections import defaultdict
 
+from eventkeys import key_for
+
 URL_RE = re.compile(
     r"github\.com/([^/\s]+)/([^/\s]+)/(issues|pull)/(\d+)", re.I
 )
@@ -83,14 +85,8 @@ def item_key(src):
 
 
 def comment_key(comment):
-    """Event key for an issue/PR comment.
-
-    Must stay identical to `render-entries.py`'s `event_key()` for the same
-    comment — reconcile decides an entry is new by this key, the renderer
-    stamps the key that actually gets posted, and any drift re-posts entries
-    that are already on the board.
-    """
-    return f"comment:{comment['id']}"
+    """Event key for an issue/PR comment. Vocabulary lives in eventkeys.py."""
+    return key_for("comment", gid=comment["id"])
 
 
 def state_events(src):
@@ -106,14 +102,13 @@ def state_events(src):
     `closed_at: null`, so nothing is emitted and the existing entry is not
     duplicated; closing it again yields a new key at the new timestamp.
 
-    Keys must stay identical to `render-entries.py`'s `event_key()`, which
-    stamps what actually gets posted. If the two drift, every run reposts the
-    same entry forever.
+    Keys come from `eventkeys.key_for`, the same derivation the renderer uses
+    to stamp what it posts.
     """
     if merged_at := (src.get("pull_request") or {}).get("merged_at"):
-        return [f"state:merged@{merged_at}"]
+        return [key_for("merged", at=merged_at)]
     if closed_at := src.get("closed_at"):
-        return [f"state:closed@{closed_at}"]
+        return [key_for("closed", at=closed_at)]
     return []
 
 
@@ -216,8 +211,8 @@ def main():
         if key in excluded_keys:
             continue
         st = item_map.get(key, {})
-        gh_keys = ([f"opened@{src['created_at']}"] + events.get(num, [])
-                   + state_events(src))
+        gh_keys = ([key_for("opened", at=src["created_at"])]
+                   + events.get(num, []) + state_events(src))
         synced = set(st.get("syncedEvents", []))
         new_events = [k for k in gh_keys if k not in synced]
 

@@ -1,6 +1,6 @@
 # Handoff — monday-github-issues-sync
 
-**Last updated:** 2026-07-28
+**Last updated:** 2026-08-06
 **Status:** Built, published, tested, and validated against a live board.
 No known open defects.
 
@@ -31,12 +31,16 @@ without living in GitHub.
 `references/*.md` carry the mechanics. Everything below is context those files do
 *not* capture.
 
-## Current state — nothing is pending
+## Current state
+
+One thing *is* pending: the `eventkeys.py` refactor below is built, tested,
+and gated, but **not committed or released**. Everything else is shipped.
 
 | Item | State |
 |---|---|
 | Skill + docs + scripts | complete, v1.8.2, 9 portability checks passing |
-| Test suite | 123 tests, three scripts, gates releases |
+| Test suite | 135 tests, four scripts, gates releases |
+| Shared key vocabulary (`scripts/eventkeys.py`) | built + all gates green, **unreleased** — see *Architecture note* |
 | `options.excludeAuthors` | v1.7.0; plan path live-validated on a throwaway board |
 | Author resolution + no assignment | v1.8.0; full chain live-validated 2026-07-27 |
 | Close / merge feed entries | v1.8.1; 14 missing entries backfilled to the live board |
@@ -97,6 +101,44 @@ Established empirically; documented in `references/board-schema.md` and
    `closed_at`, `closed_by` (the *merger* on a merged PR), and `merged_at`
    nested inside `pull_request`. No `pulls/N` call, no timeline walk. This is
    why the 1.8.1 fix costs zero extra requests.
+
+## Architecture note — `scripts/eventkeys.py` is the key vocabulary
+
+Added after 1.8.2. **Read this before touching anything that produces or
+consumes an event key.**
+
+An event key (`comment:445566`, `state:merged@<iso>`, `opened@<iso>`) is the
+idempotency handle for one Updates-feed entry. Two components must agree on it:
+`reconcile.py` decides an entry is new by testing the key against
+`syncedEvents`, and `render-entries.py` stamps the key on what it posts.
+Disagreement means duplicated or silently-dropped entries.
+
+They disagreed twice — 1.8.1 and 1.8.2 were the same defect at two layers, both
+caused by two implementations of one vocabulary. Each was patched with a test
+comparing the two derivations. `eventkeys.py` removes the need for the
+comparison: there is now **one** `key_for()`, and both scripts import it.
+
+Three things that are not obvious:
+
+1. **The import works because the scripts are run directly.** Python puts a
+   script's own directory on `sys.path`, so `from eventkeys import key_for`
+   resolves to the sibling file with no package, no install, and no
+   `__init__.py`. This preserves the "clone it and it runs" property. It is
+   also why `eventkeys.py` has no hyphen — it must be a valid module name,
+   unlike `render-entries.py`, which is only ever executed.
+2. **Tests must inject that path themselves.** `tests/helpers.py` loads the
+   hyphenated scripts via `spec_from_file_location`, which does *not* put
+   `scripts/` on `sys.path`. It inserts it explicitly. Remove that and every
+   script fails to import under test for a reason that says nothing about the
+   code.
+3. **`test_both_scripts_share_one_implementation` asserts object identity**
+   (`render.key_for is eventkeys.key_for`), not equal output. Mutation-tested
+   with a *behaviourally identical* local copy — same logic, same results — and
+   it still fails. The test forbids duplicating the logic, which is the actual
+   failure mode; a test comparing outputs would have passed on that copy.
+
+Adding an event kind means adding it to `ID_KEYED` or the timestamp branch in
+`eventkeys.py`, never re-deriving a key at a call site.
 
 ## Environment / permission gotchas
 
@@ -214,6 +256,22 @@ Established empirically; documented in `references/board-schema.md` and
   on without the per-item timeline. `state_events()` in `reconcile.py` is where
   that would go.
 - `syncCommits` and `syncLabelEvents` are off by default and unexercised.
+
+### The one loose thread the refactor left
+
+`eventkeys.ID_KEYED` defines `review`, `rcomment`, and `commit` prefixes, and
+`render-entries.py` can render all three. **`reconcile.py` derives none of
+them** — it buckets comments only (`comment_key`) plus `opened@` and
+`state_events()`. Nothing is broken today, because no code path fetches reviews
+or commits, so there is no key to disagree about.
+
+But that is exactly the shape 1.8.1 had: a renderer that handles a kind, a
+reconciler that ignores it, and no failing test. **The moment review or commit
+syncing is switched on, a plan that says "0 new events" for a PR with three
+approvals is the same bug a third time.** The difference now is that the fix is
+mechanical — derive via `key_for("review_approved", gid=...)` and it cannot
+drift — and `test_reconcile_derivations_agree_with_the_shared_derivation` is
+the place to extend.
 - No integration test touches the monday MCP; everything MCP-side was validated
   by hand. A fake-MCP harness would close that gap if the skill grows.
 
