@@ -8,6 +8,11 @@ No known open defects.
 Updates feed. See *Hard-won facts* #8 — it is the most instructive bug in the
 project's history, because every individual piece was correct and tested.
 
+**1.8.3** replaced the two key derivations with one shared `key_for()` in
+`scripts/eventkeys.py`, and **1.9.0** used it to add reviews, inline review
+comments, and commits to the feed — the third instance of the same defect,
+closed before it could ship. See the *Architecture note*.
+
 **1.8.2** closed the same class of hole one layer down: `event_key()` silently
 fell back to `state:<kind>@<at>` for an id-keyed event built without an `id`,
 yielding a plausible key that matches nothing and re-posts entries already on
@@ -24,23 +29,21 @@ A Claude Code skill that mirrors a GitHub repo's issues and pull requests into a
 monday.com board (one-way, GitHub → monday), so PM can see development activity
 without living in GitHub.
 
-- **Latest release:** v1.8.2
+- **Latest release:** v1.9.0
 - **Invoked as:** `/monday-github-issues-sync`
 
 **Do not re-read the design from this document.** `SKILL.md` is the entry point;
 `references/*.md` carry the mechanics. Everything below is context those files do
 *not* capture.
 
-## Current state
-
-One thing *is* pending: the `eventkeys.py` refactor below is built, tested,
-and gated, but **not committed or released**. Everything else is shipped.
+## Current state — nothing is pending
 
 | Item | State |
 |---|---|
-| Skill + docs + scripts | complete, v1.8.2, 9 portability checks passing |
-| Test suite | 135 tests, four scripts, gates releases |
-| Shared key vocabulary (`scripts/eventkeys.py`) | built + all gates green, **unreleased** — see *Architecture note* |
+| Skill + docs + scripts | complete, v1.9.0, 9 portability checks passing |
+| Test suite | 149 tests, four scripts, gates releases |
+| Shared key vocabulary (`scripts/eventkeys.py`) | v1.8.3 — see *Architecture note* |
+| Reviews / inline comments / commits in the feed | v1.9.0; reconcile derives all three via `key_for` |
 | `options.excludeAuthors` | v1.7.0; plan path live-validated on a throwaway board |
 | Author resolution + no assignment | v1.8.0; full chain live-validated 2026-07-27 |
 | Close / merge feed entries | v1.8.1; 14 missing entries backfilled to the live board |
@@ -255,9 +258,23 @@ Adding an event kind means adding it to `ID_KEYED` or the timestamp branch in
   endpoint carries no timestamp for the transition, so there is nothing to key
   on without the per-item timeline. `state_events()` in `reconcile.py` is where
   that would go.
-- `syncCommits` and `syncLabelEvents` are off by default and unexercised.
+- `syncCommits` is wired end-to-end as of 1.9.0 but still **off by default and
+  unexercised against a live board** — commits are noisy enough to bury the
+  conversation. `syncLabelEvents` remains unbuilt; it needs the per-item
+  timeline, the one thing the repo-wide endpoints cannot supply.
 
-### The one loose thread the refactor left
+### ~~The one loose thread the refactor left~~ — closed in 1.9.0
+
+Reviews, inline review comments, and commits now derive their keys in
+`reconcile.py` through `key_for`, so the third instance of the 1.8.1 shape
+never shipped. `eventkeys.review_kind()` joined the shared vocabulary for the
+same reason `key_for` did: reconcile needs it for the key, the renderer for the
+glyph. `PENDING` reviews return `None` and are never posted — an unsubmitted
+draft is visible only to its author.
+
+Retained below because the *reasoning* is the reusable part:
+
+
 
 `eventkeys.ID_KEYED` defines `review`, `rcomment`, and `commit` prefixes, and
 `render-entries.py` can render all three. **`reconcile.py` derives none of

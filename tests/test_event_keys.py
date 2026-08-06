@@ -83,6 +83,43 @@ class TestTimestampKeyedEvents(unittest.TestCase):
         self.assertEqual(eventkeys.key_for("labeled", gid=42), "labeled:42")
 
 
+class TestReviewKind(unittest.TestCase):
+    """GitHub review state -> event kind. Shared vocabulary in its own right.
+
+    reconcile needs it to derive the key; the renderer needs it to pick the
+    glyph. Two mappings would drift exactly like two key derivations did.
+    """
+
+    def test_each_submitted_state_maps_to_its_kind(self):
+        self.assertEqual(eventkeys.review_kind("APPROVED"), "review_approved")
+        self.assertEqual(eventkeys.review_kind("CHANGES_REQUESTED"), "review_changes")
+        self.assertEqual(eventkeys.review_kind("COMMENTED"), "review_comment")
+
+    def test_state_matching_is_case_insensitive(self):
+        self.assertEqual(eventkeys.review_kind("approved"), "review_approved")
+
+    def test_pending_review_is_not_an_event(self):
+        # A PENDING review has not been submitted — it is a draft visible only
+        # to its author, with no submitted_at. Posting it leaks an unfinished
+        # review to the whole board.
+        self.assertIsNone(eventkeys.review_kind("PENDING"))
+        self.assertIsNone(eventkeys.review_kind(None))
+
+    def test_every_review_kind_keys_into_one_namespace(self):
+        # Whatever the state, one GitHub review object is one entry.
+        keys = {
+            eventkeys.key_for(eventkeys.review_kind(s), gid=778899)
+            for s in ("APPROVED", "CHANGES_REQUESTED", "COMMENTED")
+        }
+        self.assertEqual(keys, {"review:778899"})
+
+    def test_unknown_state_degrades_to_a_generic_review(self):
+        # DISMISSED and anything GitHub adds later still belong in the feed;
+        # dropping them silently loses history.
+        self.assertEqual(eventkeys.review_kind("DISMISSED"), "review_comment")
+        self.assertEqual(eventkeys.review_kind("SOMETHING_NEW"), "review_comment")
+
+
 class TestNoDrift(unittest.TestCase):
     """The invariant both shipped defects violated."""
 

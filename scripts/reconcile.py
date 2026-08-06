@@ -7,15 +7,26 @@ itself, repairs state, then diffs. Read-only — it decides, it does not write.
 Usage:
   reconcile.py OWNER/REPO --board board_items.json --github issues.json \
                [--state state.json] [--comments comments.json] \
+               [--review-comments review-comments.json] \
+               [--reviews reviews.json] [--commits commits.json] \
                [--exclude-author LOGIN ...]
 
 board_items.json  : get_board_items_page output (needs the GitHub URL column)
 issues.json       : gh api repos/O/R/issues?state=all output
 comments.json     : gh api repos/O/R/issues/comments output (optional)
+review-comments.json : gh api repos/O/R/pulls/comments output (optional)
+reviews.json      : {"<pr number>": [review, ...]} (optional)
+commits.json      : {"<pr number>": [commit, ...]} (optional; syncCommits)
 state.json        : existing .monday-sync/*.json (optional; absent = first run)
 --exclude-author  : skip items opened by this login (repeatable). Unioned with
                     options.excludeAuthors from state. Item-scoped: it filters
                     which issues/PRs are mirrored, not which comments post.
+
+Comments and review comments come from repo-wide endpoints and carry their own
+item url. Reviews and commits have no repo-wide endpoint, so they arrive keyed
+by PR number — the same shape `resolve-authors.py --reviews` consumes. Every
+event source is optional: omitting one plans exactly as it did before that
+source existed.
 
 Emits a JSON plan on stdout and a human summary on stderr. Exit 0 always —
 "nothing to do" is a valid outcome, not a failure.
@@ -26,7 +37,7 @@ import re
 import sys
 from collections import defaultdict
 
-from eventkeys import key_for
+from eventkeys import key_for, review_kind
 
 URL_RE = re.compile(
     r"github\.com/([^/\s]+)/([^/\s]+)/(issues|pull)/(\d+)", re.I
@@ -87,6 +98,42 @@ def item_key(src):
 def comment_key(comment):
     """Event key for an issue/PR comment. Vocabulary lives in eventkeys.py."""
     return key_for("comment", gid=comment["id"])
+
+
+def inline_comment_key(comment):
+    """Event key for a PR inline (diff-line) review comment.
+
+    Its own namespace: conversation comments and review comments have separate
+    id spaces on GitHub, so one namespace would let an inline comment mask an
+    ordinary one that happens to share an id.
+    """
+    return key_for("inline_comment", gid=comment["id"])
+
+
+def review_key(review):
+    """Event key for a submitted PR review, or None if it is not an event.
+
+    None means "do not sync this" — an unsubmitted PENDING draft. Callers must
+    test for it rather than keying the review anyway.
+    """
+    kind = review_kind(review.get("state"))
+    return None if kind is None else key_for(kind, gid=review["id"])
+
+
+def commit_key(commit):
+    """Event key for a commit on a PR, keyed by short sha.
+
+    Truncated to 7 so the key does not depend on which endpoint supplied the
+    sha — `references/github-queries.md` already shortens it on fetch, but a
+    full sha arriving from anywhere else must not key the same commit twice.
+    """
+    return key_for("commit", gid=str(commit["sha"])[:7])
+
+
+def item_number(url):
+    """Trailing issue/PR number from a GitHub API url, or None."""
+    n = str(url or "").rstrip("/").rsplit("/", 1)[-1]
+    return n if n.isdigit() else None
 
 
 def state_events(src):
@@ -156,6 +203,14 @@ def main():
     ap.add_argument("--github", required=True)
     ap.add_argument("--state")
     ap.add_argument("--comments")
+    ap.add_argument("--review-comments", dest="review_comments",
+                    help="gh api repos/O/R/pulls/comments output (flat list)")
+    ap.add_argument("--reviews",
+                    help="{\"<pr number>\": [review, ...]} — reviews have no "
+                         "repo-wide endpoint, so they arrive keyed by number")
+    ap.add_argument("--commits",
+                    help="{\"<pr number>\": [commit, ...]}; only when "
+                         "options.syncCommits is on")
     ap.add_argument("--exclude-author", action="append", metavar="LOGIN",
                     help="skip items opened by this login; repeatable. Merged "
                          "with options.excludeAuthors from --state.")
@@ -166,6 +221,9 @@ def main():
     gh = load(a.github) or []
     state = load(a.state) or {}
     comments = load(a.comments) or []
+    review_comments = load(a.review_comments) or []
+    reviews = load(a.reviews) or {}
+    commits = load(a.commits) or {}
     item_map = state.get("itemMap", {})
 
     observed, dupes, foreign, unmanaged = board_observations(board, repo)
@@ -197,11 +255,23 @@ def main():
     dropped = [k for k in item_map if k not in observed]
 
     # --- events present on GitHub, bucketed by item ----------------------
+    # Flat lists come from repo-wide endpoints and carry their own item url.
+    # Reviews and commits have no repo-wide endpoint, so they arrive already
+    # keyed by number — the shape `resolve-authors.py --reviews` also takes.
     events = defaultdict(list)
     for c in comments:
-        n = str(c.get("issue_url", "")).rsplit("/", 1)[-1]
-        if n.isdigit():
+        if n := item_number(c.get("issue_url")):
             events[n].append(comment_key(c))
+    for c in review_comments:
+        if n := item_number(c.get("pull_request_url")):
+            events[n].append(inline_comment_key(c))
+    for num, items in (reviews or {}).items():
+        for r in items or []:
+            if k := review_key(r):           # None == unsubmitted draft
+                events[str(num)].append(k)
+    for num, items in (commits or {}).items():
+        for c in items or []:
+            events[str(num)].append(commit_key(c))
 
     # --- Phase 2: diff ---------------------------------------------------
     create, update, skip = [], [], []

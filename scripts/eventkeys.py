@@ -56,6 +56,36 @@ ID_KEYED = {
 }
 
 
+# GitHub review state -> event kind. Shared for the same reason `key_for` is:
+# reconcile needs it to derive the key, the renderer needs it to pick the glyph,
+# and two copies of the mapping would drift exactly as two key derivations did.
+REVIEW_KIND = {
+    "APPROVED": "review_approved",
+    "CHANGES_REQUESTED": "review_changes",
+    "COMMENTED": "review_comment",
+}
+
+
+def review_kind(state):
+    """Event kind for a GitHub review, or None if it is not an event.
+
+    `PENDING` is the one state that must never reach a board: it is an
+    unsubmitted draft, visible only to its author and carrying no
+    `submitted_at`. Posting it publishes a review its author has not finished.
+
+    Anything else unrecognised — `DISMISSED` today, whatever GitHub adds later
+    — degrades to a generic review rather than being dropped. All three kinds
+    key into `review:<id>` anyway, so an unknown state costs a glyph, never an
+    entry.
+    """
+    if not state:
+        return None
+    normalized = str(state).upper()
+    if normalized == "PENDING":
+        return None
+    return REVIEW_KIND.get(normalized, "review_comment")
+
+
 def key_for(kind, at=None, gid=None):
     """The event key for one feed entry.
 

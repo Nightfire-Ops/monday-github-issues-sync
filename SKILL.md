@@ -111,8 +111,8 @@ backfill leaves a half-populated board.
 Call `mcp__monday__get_user_context`. It is read-only, needs no arguments, and
 returns the authenticated user and account.
 
-- **Returns a user** → the server is connected and authenticated. Keep the
-  numeric user id; Step 2 needs it for assignment.
+- **Returns a user** → the server is connected and authenticated. Nothing else
+  is needed from it; the skill assigns nobody, so the user id is not used.
 - **Tool is not available** (no `mcp__monday__*` tools in this session) → the
   server is not installed. Stop and tell the user:
 
@@ -209,8 +209,15 @@ So on **every** run, not just when state looks broken:
 ```bash
 scripts/reconcile.py OWNER/REPO \
   --board board_items.json --github issues.json \
-  --comments comments.json --state .monday-sync/<file>.json
+  --comments comments.json --review-comments review-comments.json \
+  --reviews reviews.json [--commits commits.json] \
+  --state .monday-sync/<file>.json
 ```
+
+Every event source is optional and each one you omit is silently absent from
+the plan — a run given no `--reviews` reports `newEvents: 0` for a PR with
+three approvals and looks perfectly healthy. Pass the same files here that you
+render from. `--commits` only when `options.syncCommits` is on.
 
 It emits the plan as JSON on stdout and the summary on stderr. Use its output
 as Step 6's plan rather than recomputing by hand. It reads `options` out of the
@@ -266,12 +273,19 @@ run summary rather than mutating the user's board.
 
 Read `references/github-queries.md` for the exact commands. The shape:
 
-- **First run:** list all issues and PRs, then sweep all comments and reviews
-  repo-wide. Do *not* walk per-item timelines for a backfill — the repo-wide
-  comment endpoints are an order of magnitude cheaper.
+- **First run:** list all issues and PRs, then sweep conversation comments and
+  inline review comments repo-wide. Do *not* walk per-item timelines for a
+  backfill — the repo-wide endpoints are an order of magnitude cheaper.
 - **Incremental run:** one `since=<lastSyncedAt>` pass over each endpoint.
   GitHub's issues endpoint returns PRs too, so a single call covers both;
   distinguish them by the presence of a `pull_request` key.
+- **Reviews are the exception: there is no repo-wide endpoint.** They are one
+  call per PR, so fetch them only for PRs this run already identified as
+  changed, never for the whole repo. Key the result by PR number — that is the
+  shape both `reconcile.py --reviews` and `resolve-authors.py --reviews` take,
+  so one file serves both.
+- **Commits only when `options.syncCommits` is on.** Also per-PR, and noisy
+  enough to bury the conversation; it is off by default for that reason.
 
 **Then resolve attribution, before building the plan:**
 
@@ -405,6 +419,31 @@ It emits each event's `html` (the update body) and `key` (the idempotency key),
 sorted oldest-first per item. Hand-rolling the conversion reliably re-breaks
 heading and list handling and risks unescaped `<`/`&` from stack traces in
 comment bodies. Post `bodies.json[].html` verbatim.
+
+**Reviews and inline review comments are feed entries too.** Build them from
+the same fetches Step 5 already makes:
+
+```bash
+# Inline review comments — repo-wide, flat list, like conversation comments
+jq '[.[] | {kind: "inline_comment", id: .id,
+            number: (.pull_request_url | split("/") | last | tonumber),
+            at: .created_at, author: .user.login, url: .html_url, body: .body}]' \
+  review-comments.json
+
+# Reviews — keyed by PR number; PENDING is an unsubmitted draft, never an entry
+jq '[to_entries[] | .key as $n | .value[]
+     | select(.state != "PENDING")
+     | {kind: (if .state == "APPROVED" then "review_approved"
+               elif .state == "CHANGES_REQUESTED" then "review_changes"
+               else "review_comment" end),
+        id: .id, number: ($n | tonumber), at: .submitted_at,
+        author: .user.login, url: .html_url, body: .body}]' reviews.json
+```
+
+Pass the same files to `reconcile.py` (`--review-comments`, `--reviews`) so the
+plan counts what you are about to post. If the plan's `newEvents` and the
+number of rendered entries disagree, one side is built wrong — that mismatch is
+the only reason a duplicated feed was caught before it shipped.
 
 **Always carry `id` on comment and review events.** Their key comes from the
 GitHub id, never the timestamp. An event built without one used to render as
