@@ -93,7 +93,8 @@ class TestBoardObservations(unittest.TestCase):
 class PlanCase(unittest.TestCase):
     """End-to-end plan shape, driven through the same code path the skill uses."""
 
-    def plan(self, board_rows, gh_rows, state=None, comments=None, extra_argv=()):
+    def plan(self, board_rows, gh_rows, state=None, comments=None, extra_argv=(),
+             reviews=None, review_comments=None, commits=None):
         """Run reconcile.main() in-process and return the emitted plan.
 
         In-process rather than via subprocess so coverage sees the real code
@@ -119,6 +120,14 @@ class PlanCase(unittest.TestCase):
         if state is not None:
             (tmp / "state.json").write_text(json.dumps(state))
             argv += ["--state", str(tmp / "state.json")]
+        # Optional event sources — absent flags must behave exactly as before.
+        for flag, payload in (("--reviews", reviews),
+                              ("--review-comments", review_comments),
+                              ("--commits", commits)):
+            if payload is not None:
+                path = tmp / (flag.lstrip("-") + ".json")
+                path.write_text(json.dumps(payload))
+                argv += [flag, str(path)]
         argv += list(extra_argv)
 
         out, err = io.StringIO(), io.StringIO()
@@ -414,6 +423,134 @@ class TestStateChangeEvents(PlanCase):
             [gh_issue(1, state="closed", closed_at="2026-07-20T09:15:00Z")],
         )
         self.assertEqual(plan["create"][0]["events"], 2)  # opened + closed
+
+
+class TestReviewAndCommitEvents(PlanCase):
+    """Reviews, inline review comments, and commits as feed entries.
+
+    The third instance of the 1.8.1 shape, closed before it could ship: the
+    renderer had rendered `review:` / `rcomment:` / `commit:` and `ID_KEYED`
+    named them, but reconcile derived none, so a PR with three approvals
+    planned `newEvents: 0`. README had claimed reviews were synced since 1.0.
+
+    Reviews have no repo-wide endpoint, so they arrive keyed by PR number —
+    the same shape `resolve-authors.py --reviews` already consumes. Inline
+    review comments do have one, so they arrive as a flat list like comments.
+    """
+
+    def opened_only(self, key, monday_id, created="2026-07-01T00:00:00Z"):
+        return self.synced_state(key, monday_id, created, [f"opened@{created}"])
+
+    def pr_board(self):
+        return [(111, "#1 a", url_for(1, pr=True))]
+
+    def pr_gh(self, **kw):
+        return [gh_issue(1, pr=True, created="2026-07-01T00:00:00Z", **kw)]
+
+    def test_regression_a_new_review_is_planned_as_an_event(self):
+        plan = self.plan(
+            self.pr_board(), self.pr_gh(), self.opened_only("pr/1", 111),
+            reviews={"1": [{"id": 778899, "state": "APPROVED",
+                            "submitted_at": "2026-07-02T00:00:00Z"}]},
+        )
+        self.assertEqual(plan["skip"], [])
+        self.assertEqual(plan["update"][0]["newEvents"], 1)
+
+    def test_already_synced_review_is_not_reposted(self):
+        state = self.synced_state(
+            "pr/1", 111, "2026-07-01T00:00:00Z",
+            ["opened@2026-07-01T00:00:00Z", "review:778899"],
+        )
+        plan = self.plan(
+            self.pr_board(), self.pr_gh(), state,
+            reviews={"1": [{"id": 778899, "state": "APPROVED"}]},
+        )
+        self.assertEqual(plan["skip"], ["pr/1"])
+
+    def test_pending_review_is_never_planned(self):
+        plan = self.plan(
+            self.pr_board(), self.pr_gh(), self.opened_only("pr/1", 111),
+            reviews={"1": [{"id": 778899, "state": "PENDING"}]},
+        )
+        self.assertEqual(plan["skip"], ["pr/1"])
+
+    def test_regression_inline_review_comment_is_planned(self):
+        plan = self.plan(
+            self.pr_board(), self.pr_gh(), self.opened_only("pr/1", 111),
+            review_comments=[{
+                "id": 4242,
+                "pull_request_url": f"https://api.github.com/repos/{REPO}/pulls/1",
+            }],
+        )
+        self.assertEqual(plan["update"][0]["newEvents"], 1)
+
+    def test_regression_inline_comment_is_not_masked_by_a_same_id_comment(self):
+        # Conversation comments and inline review comments have independent id
+        # spaces, so a collision is ordinary, not exotic. Shared one namespace,
+        # an already-synced comment:55 would swallow inline comment 55 and the
+        # entry would never post — a silent drop, the hardest kind to notice.
+        state = self.synced_state(
+            "pr/1", 111, "2026-07-01T00:00:00Z",
+            ["opened@2026-07-01T00:00:00Z", "comment:55"],
+        )
+        plan = self.plan(
+            self.pr_board(), self.pr_gh(), state,
+            comments=[{"id": 55,
+                       "issue_url": f"https://api.github.com/repos/{REPO}/issues/1"}],
+            review_comments=[{"id": 55,
+                              "pull_request_url": f"https://api.github.com/repos/{REPO}/pulls/1"}],
+        )
+        self.assertNotEqual(
+            reconcile.inline_comment_key({"id": 55}),
+            reconcile.comment_key({"id": 55}),
+        )
+        # Checked before indexing: sharing the namespace makes the item vanish
+        # from the plan entirely, and an IndexError here would hide why.
+        self.assertEqual(plan["skip"], [], "inline comment was masked and dropped")
+        self.assertEqual(plan["update"][0]["newEvents"], 1)
+
+    def test_commits_are_planned_when_supplied(self):
+        plan = self.plan(
+            self.pr_board(), self.pr_gh(), self.opened_only("pr/1", 111),
+            commits={"1": [{"sha": "abc1234"}]},
+        )
+        self.assertEqual(plan["update"][0]["newEvents"], 1)
+
+    def test_commit_key_uses_the_short_sha(self):
+        # state-file.md specifies commit:<sha7>. A full sha would key the same
+        # commit differently depending on which endpoint supplied it.
+        self.assertEqual(
+            reconcile.commit_key({"sha": "abc1234def5678"}), "commit:abc1234"
+        )
+
+    def test_regression_review_key_matches_what_the_renderer_emits(self):
+        # The seam, for the third pair. Compare derivations, not literals.
+        review = {"id": 778899, "state": "CHANGES_REQUESTED"}
+        self.assertEqual(
+            reconcile.review_key(review),
+            render.event_key({"kind": "review_changes", "id": 778899,
+                              "at": "2026-07-02T00:00:00Z"}),
+        )
+        rc = {"id": 4242}
+        self.assertEqual(
+            reconcile.inline_comment_key(rc),
+            render.event_key({"kind": "inline_comment", "id": 4242,
+                              "at": "2026-07-02T00:00:00Z"}),
+        )
+        self.assertEqual(
+            reconcile.commit_key({"sha": "abc1234"}),
+            render.event_key({"kind": "commit", "id": "abc1234",
+                              "at": "2026-07-02T00:00:00Z"}),
+        )
+
+    def test_absent_sources_behave_exactly_as_before(self):
+        # Reviews and commits are optional inputs; a run that fetches neither
+        # must plan identically to one from before they existed.
+        plan = self.plan(
+            self.pr_board(), self.pr_gh(), self.opened_only("pr/1", 111)
+        )
+        self.assertEqual(plan["skip"], ["pr/1"])
+        self.assertEqual(plan["update"], [])
 
 
 class TestExcludeAuthors(PlanCase):

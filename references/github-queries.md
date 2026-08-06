@@ -73,6 +73,23 @@ gh api "repos/OWNER/REPO/pulls/NUMBER/reviews?per_page=100" --paginate \
   --jq '[.[] | {id, state, user: .user.login, submitted_at, body}]'
 ```
 
+`reconcile.py --reviews` wants them **keyed by PR number**, because there is no
+url on a review to bucket by — the same shape `resolve-authors.py --reviews`
+takes, so one file feeds both:
+
+```bash
+for n in $CHANGED_PRS; do
+  gh api "repos/OWNER/REPO/pulls/$n/reviews?per_page=100" --paginate \
+    | jq -s --arg n "$n" '{($n): (add // [])}'
+done | jq -s 'add // {}' > "$SCRATCH/reviews.json"
+```
+
+**Drop `PENDING` reviews.** A pending review is an unsubmitted draft, visible
+only to its author and carrying no `submitted_at`. `eventkeys.review_kind()`
+returns `None` for it and `reconcile.py` skips it; do not work around that when
+building the events for the renderer, or an unfinished review is published to
+the whole board.
+
 ## Commits on a PR
 
 Only worth syncing if the user wants commit-level visibility — it is noisy and

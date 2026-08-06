@@ -11,9 +11,11 @@ management can see what development is actually doing without living in GitHub.
 - One monday item per issue and per pull request
 - Columns carrying state, author, assignees, labels, milestone, branch, and
   real GitHub timestamps
-- Every comment, review, merge, close, and reopen as a timestamped entry in
-  that item's Updates feed, oldest first
-- Items assigned to a monday user on creation, so nothing lands unowned
+- Every comment, review, inline review comment, merge, and close as a
+  timestamped entry in that item's Updates feed, oldest first
+- Rows arrive **unowned** — the skill never writes to a monday people column.
+  A GitHub issue has no opinion about who should own the row, and guessing puts
+  work in somebody's "My Work" queue. Assigning is a human decision.
 
 Full history on the first run, incremental after that. Every run reconciles
 against the board before writing, so **re-running never duplicates**.
